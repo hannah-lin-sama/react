@@ -47,10 +47,12 @@ let concurrentQueuesIndex = 0;
 
 let concurrentlyUpdatedLanes: Lanes = NoLanes;
 
+/**
+ * 处理在并发渲染期间暂存的更新队列，将暂存的更新真正添加到 fiber 的更新队列中
+ */
 export function finishQueueingConcurrentUpdates(): void {
   const endIndex = concurrentQueuesIndex;
   concurrentQueuesIndex = 0;
-
   concurrentlyUpdatedLanes = NoLanes;
 
   let i = 0;
@@ -67,9 +69,11 @@ export function finishQueueingConcurrentUpdates(): void {
     if (queue !== null && update !== null) {
       const pending = queue.pending;
       if (pending === null) {
+        // 队列为空，创建循环链表
         // This is the first update. Create a circular list.
         update.next = update;
       } else {
+        // 队列非空，插入到链表末尾
         update.next = pending.next;
         pending.next = update;
       }
@@ -86,6 +90,13 @@ export function getConcurrentlyUpdatedLanes(): Lanes {
   return concurrentlyUpdatedLanes;
 }
 
+/**
+ * 将更新添加到并发渲染期间暂存的更新队列中
+ * @param {*} fiber 
+ * @param {*} queue 
+ * @param {*} update 
+ * @param {*} lane 
+ */
 function enqueueUpdate(
   fiber: Fiber,
   queue: ConcurrentQueue | null,
@@ -94,16 +105,20 @@ function enqueueUpdate(
 ) {
   // Don't update the `childLanes` on the return path yet. If we already in
   // the middle of rendering, wait until after it has completed.
+  // 在渲染期间，收到的新更新被暂存到数组中
+  // 不立即入队，避免干扰当前渲染
   concurrentQueues[concurrentQueuesIndex++] = fiber;
   concurrentQueues[concurrentQueuesIndex++] = queue;
   concurrentQueues[concurrentQueuesIndex++] = update;
   concurrentQueues[concurrentQueuesIndex++] = lane;
 
+  // 合并更新lanes,追踪所有暂存的更新的 lanes
   concurrentlyUpdatedLanes = mergeLanes(concurrentlyUpdatedLanes, lane);
 
   // The fiber's `lane` field is used in some places to check if any work is
   // scheduled, to perform an eager bailout, so we need to update it immediately.
   // TODO: We should probably move this to the "shared" queue instead.
+  // 立即标记 fiber lanes,用于其他地方检查是否有待处理的工作,执行 eager bailout（快速跳过）
   fiber.lanes = mergeLanes(fiber.lanes, lane);
   const alternate = fiber.alternate;
   if (alternate !== null) {
@@ -134,6 +149,7 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   const lane = NoLane;
   const concurrentQueue: ConcurrentQueue = (queue: any);
   const concurrentUpdate: ConcurrentUpdate = (update: any);
+  // 将更新添加到并发渲染期间暂存的更新队列中
   enqueueUpdate(fiber, concurrentQueue, concurrentUpdate, lane);
 
   // Usually we can rely on the upcoming render phase to process the concurrent
@@ -144,7 +160,10 @@ export function enqueueConcurrentHookUpdateAndEagerlyBailout<S, A>(
   // Check if we're currently in the middle of rendering a tree, and if not,
   // process the queue immediately to prevent a leak.
   const isConcurrentlyRendering = getWorkInProgressRoot() !== null;
+  // 如果在渲染中：更新会通过渲染流程自动处理
+
   if (!isConcurrentlyRendering) {
+    // 如果不在渲染中：调用 finishQueueingConcurrentUpdates() 立即处理队列
     finishQueueingConcurrentUpdates();
   }
 }

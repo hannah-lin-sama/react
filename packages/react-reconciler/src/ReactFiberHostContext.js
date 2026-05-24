@@ -83,8 +83,11 @@ function pushHostContainer(fiber: Fiber, nextRootInstance: Container): void {
 }
 
 function popHostContainer(fiber: Fiber) {
+  // 弹出上下文对象栈
   pop(contextStackCursor, fiber);
+  // 弹出上下文 Fiber 栈
   pop(contextFiberStackCursor, fiber);
+  // 弹出根实例栈
   pop(rootInstanceStackCursor, fiber);
 }
 

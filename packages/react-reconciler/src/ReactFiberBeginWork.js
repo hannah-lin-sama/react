@@ -1385,9 +1385,12 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
   const ref = workInProgress.ref;
   if (ref === null) {
     if (current !== null && current.ref !== null) {
+      // 需要清理旧 ref
       // Schedule a Ref effect
       workInProgress.flags |= Ref | RefStatic;
     }
+
+    // 有 ref
   } else {
     if (typeof ref !== 'function' && typeof ref !== 'object') {
       throw new Error(
@@ -1396,7 +1399,7 @@ function markRef(current: Fiber | null, workInProgress: Fiber) {
     }
     if (current === null || current.ref !== ref) {
       // Schedule a Ref effect
-      workInProgress.flags |= Ref | RefStatic;
+      workInProgress.flags |= Ref | RefStatic; // 512  ｜ 4194304
     }
   }
 }
@@ -1785,17 +1788,21 @@ function finishClassComponent(
 }
 
 function pushHostRootContext(workInProgress: Fiber) {
+  // workInProgress.stateNode 指向 FiberRoot，包含根节点的所有状态信息
   const root = (workInProgress.stateNode: FiberRoot);
+  // 待处理的上下文变更
   if (root.pendingContext) {
     pushTopLevelContextObject(
       workInProgress,
       root.pendingContext,
-      root.pendingContext !== root.context,
+      root.pendingContext !== root.context, // 参数标记上下文是否发生变化
     );
   } else if (root.context) {
     // Should always be set
+    // 如果没有待处理的上下文，使用当前的 root.context，且标记为未变化。
     pushTopLevelContextObject(workInProgress, root.context, false);
   }
+  // 将 DOM 容器信息推入上下文栈，供后续 DOM 操作使用
   pushHostContainer(workInProgress, root.containerInfo);
 }
 
@@ -3905,17 +3912,25 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
   // This fiber does not have any pending work. Bailout without entering
   // the begin phase. There's still some bookkeeping we that needs to be done
   // in this optimized path, mostly pushing stuff onto the stack.
+  // 根据组件类型进行上下文栈操作
   switch (workInProgress.tag) {
     case HostRoot: {
+      // 维护上下文栈的对称性，即使不渲染也要执行必要的 push 操作。
+
+      // 将 HostRoot 的上下文推入上下文栈。
       pushHostRootContext(workInProgress);
       const root: FiberRoot = workInProgress.stateNode;
+      // 推入根节点的 Transition 状态。
       pushRootTransition(workInProgress, root, renderLanes);
 
       if (enableTransitionTracing) {
+        // 在 Transition 追踪启用时，推入根节点的标记实例
         pushRootMarkerInstance(workInProgress);
       }
 
       const cache: Cache = current.memoizedState.cache;
+      // 推入缓存提供者
+      // 支持 React 18+ 的 cache API，用于服务端渲染和数据预取。
       pushCacheProvider(workInProgress, cache);
       resetHydrationState();
       break;
@@ -3935,12 +3950,14 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       pushHostContainer(workInProgress, workInProgress.stateNode.containerInfo);
       break;
     case ContextProvider: {
+      // 确保 context 值被正确推入上下文栈，子组件可以访问。
       const newValue = workInProgress.memoizedProps.value;
       const context: ReactContext<any> = workInProgress.type;
       pushProvider(workInProgress, context, newValue);
       break;
     }
     case Profiler:
+      // 即使 bailout，也要更新 Profiler 的状态标记。
       if (enableProfilerTimer) {
         // Profiler should only call onRender when one of its descendants actually rendered.
         const hasChildWork = includesSomeLane(
@@ -3979,6 +3996,7 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       break;
     }
     case SuspenseComponent: {
+      // 处理 Suspense 的特殊状态（脱水、超时），决定是否需要重试或直接 bailout。
       const state: SuspenseState | null = workInProgress.memoizedState;
       if (state !== null) {
         if (state.dehydrated !== null) {
@@ -4162,15 +4180,27 @@ function attemptEarlyBailoutIfNoScheduledUpdate(
       // Fallthrough
     }
   }
+  // 复用已完成的工作
   return bailoutOnAlreadyFinishedWork(current, workInProgress, renderLanes);
 }
 
+/**
+ * beginWork 是 React Reconciler 的核心渲染函数，负责处理 Fiber 节点的"开始工作"阶段。
+ * 1、判断组件是否需要重新渲染（Early Bailout）
+ * 2、根据组件类型执行对应的更新逻辑
+ * 3、返回子 Fiber 节点继续遍历
+ * @param {*} current 
+ * @param {*} workInProgress 
+ * @param {*} renderLanes 
+ * @returns 
+ */
 function beginWork(
   current: Fiber | null,
   workInProgress: Fiber,
   renderLanes: Lanes,
 ): Fiber | null {
   if (__DEV__) {
+    // 开发模式下支持热更新时的组件重新挂载
     if (workInProgress._debugNeedsRemount && current !== null) {
       // This will restart the begin phase with a new fiber.
       const copiedFiber = createFiberFromTypeAndProps(
@@ -4187,10 +4217,12 @@ function beginWork(
     }
   }
 
+  // 更新
   if (current !== null) {
     const oldProps = current.memoizedProps;
     const newProps = workInProgress.pendingProps;
 
+    // props/context/type 变化，需要重新渲染
     if (
       oldProps !== newProps ||
       hasLegacyContextChanged() ||
@@ -4201,8 +4233,12 @@ function beginWork(
       // This may be unset if the props are determined to be equal later (memo).
       didReceiveUpdate = true;
     } else {
+      // Early Bailout 触发条件：
+      // 1、没有待处理的更新或上下文变化
+      // 2、没有 DidCapture 标志（非错误边界二次渲染）
       // Neither props nor legacy context changes. Check if there's a pending
       // update or context change.
+      // 检查是否有待处理的更新或上下文变化
       const hasScheduledUpdateOrContext = checkScheduledUpdateOrContext(
         current,
         renderLanes,
@@ -4221,6 +4257,7 @@ function beginWork(
           renderLanes,
         );
       }
+      // Legacy Mode 下 Suspense 需要强制更新的特殊情况
       if ((current.flags & ForceUpdateForLegacySuspense) !== NoFlags) {
         // This is a special case that only exists for legacy mode.
         // See https://github.com/facebook/react/pull/19216.
@@ -4233,6 +4270,8 @@ function beginWork(
         didReceiveUpdate = false;
       }
     }
+
+    // 首次渲染
   } else {
     didReceiveUpdate = false;
 
@@ -4259,6 +4298,7 @@ function beginWork(
   // move this assignment out of the common path and into each branch.
   workInProgress.lanes = NoLanes;
 
+  // 组件类型分发（switch-case） 
   switch (workInProgress.tag) {
     case LazyComponent: {
       const elementType = workInProgress.elementType;

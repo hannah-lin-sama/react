@@ -72,21 +72,31 @@ export function detachDeletedInstance(node: Instance): void {
   if (enableInternalInstanceMap) {
     internalInstanceMap.delete(node);
     internalPropsMap.delete(node);
+    // 删除事件处理函数
     delete (node: any)[internalEventHandlersKey];
+    // 删除事件监听器
     delete (node: any)[internalEventHandlerListenersKey];
+    // 删除事件句柄集合
     delete (node: any)[internalEventHandlesSetKey];
+    // 删除根节点资源
     delete (node: any)[internalRootNodeResourcesKey];
     if (__DEV__) {
+      // 删除实例键
       delete (node: any)[internalInstanceKey];
     }
     return;
   }
   // TODO: This function is only called on host components. I don't think all of
   // these fields are relevant.
+  // 删除实例键
   delete (node: any)[internalInstanceKey];
+  // 删除属性键
   delete (node: any)[internalPropsKey];
+  // 删除事件处理函数
   delete (node: any)[internalEventHandlersKey];
+  // 删除事件监听器
   delete (node: any)[internalEventHandlerListenersKey];
+  // 删除事件句柄集合
   delete (node: any)[internalEventHandlesSetKey];
 }
 
@@ -356,12 +366,17 @@ export function doesTargetHaveEventHandle(
   return eventHandles.has(eventHandle);
 }
 
+/**
+ * React DOM 的资源管理函数，负责获取或初始化根节点的资源对象，用于管理可提升（hoistable）的样式和脚本资源。
+ * @param {*} root  可提升资源的根节点
+ * @returns 
+ */
 export function getResourcesFromRoot(root: HoistableRoot): RootResources {
   let resources = (root: any)[internalRootNodeResourcesKey];
   if (!resources) {
     resources = (root: any)[internalRootNodeResourcesKey] = {
-      hoistableStyles: new Map(),
-      hoistableScripts: new Map(),
+      hoistableStyles: new Map(), // 可提升的样式资源
+      hoistableScripts: new Map(), // 可提升的脚本资源
     };
   }
   return resources;

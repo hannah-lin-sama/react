@@ -191,6 +191,7 @@ export const enableReactTestRendererWarning: boolean = true;
 // Disables legacy mode
 // This allows us to land breaking changes to remove legacy mode APIs in experimental builds
 // before removing them in stable in the next Major
+// 禁用 Legacy 模式
 export const disableLegacyMode: boolean = true;
 
 // -----------------------------------------------------------------------------

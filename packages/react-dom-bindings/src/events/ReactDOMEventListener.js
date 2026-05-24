@@ -309,6 +309,12 @@ export function findInstanceBlockingTarget(
   return null;
 }
 
+/**
+ * getEventPriority 是 React 事件系统与调度系统之间的关键桥梁，
+ * 负责将 DOM 事件名称映射到对应的优先级，从而决定事件处理函数的执行顺序。
+ * @param {*} domEventName 
+ * @returns 
+ */
 export function getEventPriority(domEventName: DOMEventName): EventPriority {
   switch (domEventName) {
     // Used by SimpleEventPlugin:
@@ -318,16 +324,16 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'close':
     case 'contextmenu':
     case 'copy':
-    case 'cut':
-    case 'auxclick':
+    case 'cut': // 剪切
+    case 'auxclick': // 辅佐点击
     case 'dblclick':
     case 'dragend':
     case 'dragstart':
     case 'drop':
-    case 'focusin':
-    case 'focusout':
+    case 'focusin': // 获得焦点
+    case 'focusout': // 失去焦点
     case 'input':
-    case 'invalid':
+    case 'invalid': // 无效输入
     case 'keydown':
     case 'keypress':
     case 'keyup':
@@ -336,18 +342,18 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'paste':
     case 'pause':
     case 'play':
-    case 'pointercancel':
-    case 'pointerdown':
-    case 'pointerup':
-    case 'ratechange':
+    case 'pointercancel': // 指针取消
+    case 'pointerdown': // 指针按下
+    case 'pointerup': // 指针松开
+    case 'ratechange': // 速率改变
     case 'reset':
-    case 'seeked':
+    case 'seeked': // 播放进度改变
     case 'submit':
-    case 'toggle':
+    case 'toggle': // 切换
     case 'touchcancel':
     case 'touchend':
     case 'touchstart':
-    case 'volumechange':
+    case 'volumechange': // 音量改变
     // Used by polyfills: (fall through)
     case 'change':
     case 'selectionchange':
@@ -368,6 +374,7 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'popstate':
     case 'select':
     case 'selectstart':
+      // 离散用户交互	立即执行，不可中断
       return DiscreteEventPriority;
     case 'drag':
     case 'dragenter':
@@ -389,7 +396,9 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
     case 'mouseleave':
     case 'pointerenter':
     case 'pointerleave':
+      // 连续用户交互	可中断执行，响应式更新
       return ContinuousEventPriority;
+      // 消息事件	继承当前调度器优先级
     case 'message': {
       // We might be in the Scheduler callback.
       // Eventually this mechanism will be replaced by a check
@@ -404,9 +413,11 @@ export function getEventPriority(domEventName: DOMEventName): EventPriority {
         case LowSchedulerPriority:
           // TODO: Handle LowSchedulerPriority, somehow. Maybe the same lane as hydration.
           return DefaultEventPriority;
+          	// 空闲事件	空闲时执行
         case IdleSchedulerPriority:
           return IdleEventPriority;
         default:
+          // 默认/普通事件	正常调度队列
           return DefaultEventPriority;
       }
     }

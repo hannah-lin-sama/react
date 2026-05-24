@@ -323,9 +323,17 @@ export function isFunctionClassComponent(
   return shouldConstruct(type);
 }
 
+/**
+ * createWorkInProgress 是 React Fiber 架构的核心函数，负责基于现有 Fiber 创建用于工作的 workInProgress Fiber，采用双缓冲池技术。
+ * @param {*} current 
+ * @param {*} pendingProps 
+ * @returns 
+ */
 // This is used to create an alternate fiber to do work on.
 export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   let workInProgress = current.alternate;
+
+  // 如果当前 workInProgress Fiber 不存在，创建一个新的 workInProgress Fiber。
   if (workInProgress === null) {
     // We use a double buffering pooling technique because we know that we'll
     // only ever need at most two versions of a tree. We pool the "other" unused
@@ -338,9 +346,9 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
       current.key,
       current.mode,
     );
-    workInProgress.elementType = current.elementType;
-    workInProgress.type = current.type;
-    workInProgress.stateNode = current.stateNode;
+    workInProgress.elementType = current.elementType; // 复用 elementType
+    workInProgress.type = current.type; // 复用 type
+    workInProgress.stateNode = current.stateNode; // 复用 stateNode
 
     if (__DEV__) {
       // DEV-only fields
@@ -351,20 +359,23 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
       workInProgress._debugHookTypes = current._debugHookTypes;
     }
 
-    workInProgress.alternate = current;
-    current.alternate = workInProgress;
+    workInProgress.alternate = current; // 修改 alternate 指向 current
+    current.alternate = workInProgress; // 修改 current.alternate 指向 workInProgress
   } else {
-    workInProgress.pendingProps = pendingProps;
+    // 如果当前 workInProgress Fiber 存在，更新其属性。
+
+
+    workInProgress.pendingProps = pendingProps; // 更新 pendingProps
     // Needed because Blocks store data on type.
-    workInProgress.type = current.type;
+    workInProgress.type = current.type; // 复用 type
 
     // We already have an alternate.
     // Reset the effect tag.
-    workInProgress.flags = NoFlags;
+    workInProgress.flags = NoFlags; // 重置 flags
 
     // The effects are no longer valid.
-    workInProgress.subtreeFlags = NoFlags;
-    workInProgress.deletions = null;
+    workInProgress.subtreeFlags = NoFlags; // 重置 subtreeFlags
+    workInProgress.deletions = null; // 重置 deletions
 
     if (enableOptimisticKey) {
       // For optimistic keys, the Fibers can have different keys if one is optimistic
@@ -384,6 +395,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
 
   // Reset all effects except static ones.
   // Static effects are not specific to a render.
+  // 共享状态和依赖
   workInProgress.flags = current.flags & StaticMask;
   workInProgress.childLanes = current.childLanes;
   workInProgress.lanes = current.lanes;
@@ -396,6 +408,7 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
   // Clone the dependencies object. This is mutated during the render phase, so
   // it cannot be shared with the current fiber.
   const currentDependencies = current.dependencies;
+  // 克隆依赖对象
   workInProgress.dependencies =
     currentDependencies === null
       ? null
@@ -411,10 +424,10 @@ export function createWorkInProgress(current: Fiber, pendingProps: any): Fiber {
           };
 
   // These will be overridden during the parent's reconciliation
-  workInProgress.sibling = current.sibling;
-  workInProgress.index = current.index;
-  workInProgress.ref = current.ref;
-  workInProgress.refCleanup = current.refCleanup;
+  workInProgress.sibling = current.sibling; // 复用 sibling
+  workInProgress.index = current.index; // 复用 index
+  workInProgress.ref = current.ref; // 复用 ref
+  workInProgress.refCleanup = current.refCleanup; // 复用 refCleanup
 
   if (enableProfilerTimer) {
     workInProgress.selfBaseDuration = current.selfBaseDuration;
@@ -932,18 +945,29 @@ export function createFiberFromDehydratedFragment(
   return fiber;
 }
 
+/**
+ * createFiberFromPortal 是 React Portal 系统的核心函数，负责根据 ReactPortal 对象创建对应的 Fiber 节点。
+ * @param {*} portal 
+ * @param {*} mode 
+ * @param {*} lanes 
+ * @returns 
+ */
 export function createFiberFromPortal(
   portal: ReactPortal,
   mode: TypeOfMode,
   lanes: Lanes,
 ): Fiber {
   const pendingProps = portal.children !== null ? portal.children : [];
+
+  // 创建类型为 HostPortal 的 Fiber 节点。
   const fiber = createFiber(HostPortal, pendingProps, portal.key, mode);
+  // 将调度优先级传递给 Fiber。
   fiber.lanes = lanes;
   fiber.stateNode = {
-    containerInfo: portal.containerInfo,
+    containerInfo: portal.containerInfo, // Portal 渲染的目标 DOM 容器
+    // 待处理的子节点（持久化更新使用）
     pendingChildren: null, // Used by persistent updates
-    implementation: portal.implementation,
+    implementation: portal.implementation, // React DOM 实现对象
   };
   return fiber;
 }

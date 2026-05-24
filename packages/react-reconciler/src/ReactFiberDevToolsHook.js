@@ -169,6 +169,10 @@ export function onPostCommitRoot(root: FiberRoot) {
   }
 }
 
+/**
+ * React DevTools 的集成钩子，用于在 Fiber 节点卸载时通知开发工具
+ * @param {*} fiber 
+ */
 export function onCommitUnmount(fiber: Fiber) {
   if (injectedHook && typeof injectedHook.onCommitFiberUnmount === 'function') {
     try {

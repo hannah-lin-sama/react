@@ -42,12 +42,18 @@ function releaseAsyncTransition() {
   }
 }
 
+/**
+ * 
+ * @param {*} scope 
+ * @param {*} options 
+ */
 export function startTransition(
   scope: () => void,
   options?: StartTransitionOptions,
 ): void {
   const prevTransition = ReactSharedInternals.T;
   const currentTransition: Transition = ({}: any);
+  // 支持 view transition
   if (enableViewTransition) {
     currentTransition.types =
       prevTransition !== null
@@ -56,12 +62,15 @@ export function startTransition(
           // In practice, this only matters if we add transition types in the inner
           // without setting state. In that case, the inner transition can finish
           // without waiting for the outer.
+          // 嵌套过渡：使用父过渡的类型集合
           prevTransition.types
         : null;
   }
+  // 支持 gesture transition
   if (enableGestureTransition) {
     currentTransition.gesture = null;
   }
+  // 支持过渡跟踪
   if (enableTransitionTracing) {
     currentTransition.name =
       options !== undefined && options.name !== undefined ? options.name : null;
@@ -73,11 +82,13 @@ export function startTransition(
   ReactSharedInternals.T = currentTransition;
 
   try {
+    // 执行回调
     const returnValue = scope();
     const onStartTransitionFinish = ReactSharedInternals.S;
     if (onStartTransitionFinish !== null) {
       onStartTransitionFinish(currentTransition, returnValue);
     }
+    // 异步处理
     if (
       typeof returnValue === 'object' &&
       returnValue !== null &&

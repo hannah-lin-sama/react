@@ -997,6 +997,10 @@ function mountWorkInProgressHook(): Hook {
   return workInProgressHook;
 }
 
+/**
+ * 负责在组件重新渲染时获取或创建 work-in-progress hook 对象，维护 hooks 的链表结构。
+ * @returns 
+ */
 function updateWorkInProgressHook(): Hook {
   // This function is used both for updates and for re-renders triggered by a
   // render phase update. It assumes there is either a current hook we can
@@ -1004,6 +1008,7 @@ function updateWorkInProgressHook(): Hook {
   // use as a base.
   let nextCurrentHook: null | Hook;
   if (currentHook === null) {
+    // 首次调用：从 current Fiber（alternate）获取第一个 hook
     const current = currentlyRenderingFiber.alternate;
     if (current !== null) {
       nextCurrentHook = current.memoizedState;
@@ -1011,16 +1016,21 @@ function updateWorkInProgressHook(): Hook {
       nextCurrentHook = null;
     }
   } else {
+    // 后续调用：从 currentHook.next 获取下一个 hook
     nextCurrentHook = currentHook.next;
   }
 
+  // 支持中断恢复：如果渲染被中断后恢复，可能已有部分 workInProgress hooks
   let nextWorkInProgressHook: null | Hook;
   if (workInProgressHook === null) {
+    // 首次调用：从 workInProgress Fiber 获取第一个 hook
     nextWorkInProgressHook = currentlyRenderingFiber.memoizedState;
   } else {
+    // 后续调用：从 workInProgressHook.next 获取下一个 hook
     nextWorkInProgressHook = workInProgressHook.next;
   }
 
+  // 复用已有 workInProgress hook
   if (nextWorkInProgressHook !== null) {
     // There's already a work-in-progress. Reuse it.
     workInProgressHook = nextWorkInProgressHook;
@@ -1047,6 +1057,7 @@ function updateWorkInProgressHook(): Hook {
 
     currentHook = nextCurrentHook;
 
+    // 状态继承：从 current hook 复制状态
     const newHook: Hook = {
       memoizedState: currentHook.memoizedState,
 
@@ -1059,21 +1070,27 @@ function updateWorkInProgressHook(): Hook {
 
     if (workInProgressHook === null) {
       // This is the first hook in the list.
+      // 初始化：如果是第一个 hook，设置为 Fiber 的 memoizedState
       currentlyRenderingFiber.memoizedState = workInProgressHook = newHook;
     } else {
       // Append to the end of the list.
+      // 链表构建：将新 hook 添加到 workInProgress hooks 链表
       workInProgressHook = workInProgressHook.next = newHook;
     }
   }
   return workInProgressHook;
 }
 
+/**
+ * 创建一个函数组件的更新队列，用于存储组件的更新信息。
+ * @returns 
+ */
 function createFunctionComponentUpdateQueue(): FunctionComponentUpdateQueue {
   return {
-    lastEffect: null,
-    events: null,
-    stores: null,
-    memoCache: null,
+    lastEffect: null, // effect 链表头    
+    events: null, // 事件处理函数数组
+    stores: null, // useSyncExternalStore 一致性队列
+    memoCache: null, // useMemoCache 缓存
   };
 }
 
@@ -1253,15 +1270,28 @@ function basicStateReducer<S>(state: S, action: BasicStateAction<S>): S {
   return typeof action === 'function' ? action(state) : action;
 }
 
+/**
+ * 负责初始化 reducer hook，创建更新队列，并返回初始状态和 dispatch 函数。
+ * @param {*} reducer 
+ * @param {*} initialArg 
+ * @param {*} init 
+ * @param {*} S 
+ * @returns 
+ */
 function mountReducer<S, I, A>(
   reducer: (S, A) => S,
   initialArg: I,
   init?: I => S,
 ): [S, Dispatch<A>] {
+  // 创建 hook 对象
   const hook = mountWorkInProgressHook();
   let initialState;
+
+  // 初始化状态：根据 init 函数或直接使用 initialArg 初始化
   if (init !== undefined) {
     initialState = init(initialArg);
+
+    // Strict Mode 双重调用：开发环境下调用两次，检测副作用
     if (shouldDoubleInvokeUserFnsInHooksDEV) {
       setIsStrictModeForDevtools(true);
       try {
@@ -1273,22 +1303,32 @@ function mountReducer<S, I, A>(
   } else {
     initialState = ((initialArg: any): S);
   }
+  // 设置 hook 状态
+  // memoizedState：当前渲染使用的状态
+  // baseState：基础状态，用于重置和对比
   hook.memoizedState = hook.baseState = initialState;
+
+  // 创建更新队列
   const queue: UpdateQueue<S, A> = {
-    pending: null,
-    lanes: NoLanes,
-    dispatch: null,
-    lastRenderedReducer: reducer,
-    lastRenderedState: (initialState: any),
+    pending: null, // 待处理的更新链表
+    lanes: NoLanes,  // 更新的优先级 lanes
+    dispatch: null, // dispatch 函数
+    lastRenderedReducer: reducer, // 最后渲染时使用的 reducer
+    lastRenderedState: (initialState: any), // 最后渲染的状态
   };
   hook.queue = queue;
+
+  // 创建 dispatch 函数
   const dispatch: Dispatch<A> = (queue.dispatch = (dispatchReducerAction.bind(
     null,
     currentlyRenderingFiber,
     queue,
   ): any));
+
+  // 返回结果
   return [hook.memoizedState, dispatch];
 }
+
 
 function updateReducer<S, I, A>(
   reducer: (S, A) => S,
@@ -1299,6 +1339,14 @@ function updateReducer<S, I, A>(
   return updateReducerImpl(hook, ((currentHook: any): Hook), reducer);
 }
 
+/**
+ * 遍历更新队列，根据优先级过滤更新，计算最终状态
+ * @param {*} reducer 
+ * @param {*} initialArg 
+ * @param {*} init 
+ * @param {*} S 
+ * @returns 
+ */
 function updateReducerImpl<S, A>(
   hook: Hook,
   current: Hook,
@@ -1306,6 +1354,7 @@ function updateReducerImpl<S, A>(
 ): [S, Dispatch<A>] {
   const queue = hook.queue;
 
+  // 如果 queue 为空，说明 hooks 被条件调用
   if (queue === null) {
     throw new Error(
       'Should have a queue. You are likely calling Hooks conditionally, ' +
@@ -1319,7 +1368,8 @@ function updateReducerImpl<S, A>(
   let baseQueue = hook.baseQueue;
 
   // The last pending update that hasn't been processed yet.
-  const pendingQueue = queue.pending;
+  // 将 pending 队列合并到 base 队列
+  const pendingQueue = queue.pending; // 获取当前 hook 的更新队列（queue.pending）
   if (pendingQueue !== null) {
     // We have new updates that haven't been processed yet.
     // We'll add them to the base queue.
@@ -1330,16 +1380,16 @@ function updateReducerImpl<S, A>(
       baseQueue.next = pendingFirst;
       pendingQueue.next = baseFirst;
     }
-    if (__DEV__) {
-      if (current.baseQueue !== baseQueue) {
-        // Internal invariant that should never happen, but feasibly could in
-        // the future if we implement resuming, or some form of that.
-        console.error(
-          'Internal error: Expected work-in-progress queue to be a clone. ' +
-            'This is a bug in React.',
-        );
-      }
-    }
+    // if (__DEV__) {
+    //   if (current.baseQueue !== baseQueue) {
+    //     // Internal invariant that should never happen, but feasibly could in
+    //     // the future if we implement resuming, or some form of that.
+    //     console.error(
+    //       'Internal error: Expected work-in-progress queue to be a clone. ' +
+    //         'This is a bug in React.',
+    //     );
+    //   }
+    // }
     current.baseQueue = baseQueue = pendingQueue;
     queue.pending = null;
   }
@@ -1363,20 +1413,27 @@ function updateReducerImpl<S, A>(
     let newBaseQueueLast: Update<S, A> | null = null;
     let update = first;
     let didReadFromEntangledAsyncAction = false;
+
+    // 更新队列处理
     do {
       // An extra OffscreenLane bit is added to updates that were made to
       // a hidden tree, so that we can distinguish them from updates that were
       // already there when the tree was hidden.
+      // 通过位运算移除 OffscreenLane 标记，得到"纯净"的更新优先级
       const updateLane = removeLanes(update.lane, OffscreenLane);
+      // 检查是否为隐藏树更新
       const isHiddenUpdate = updateLane !== update.lane;
 
       // Check if this update was made while the tree was hidden. If so, then
       // it's not a "base" update and we should disregard the extra base lanes
       // that were added to renderLanes when we entered the Offscreen tree.
       let shouldSkipUpdate = isHiddenUpdate
+      // 优先级过滤：只处理当前渲染优先级内的更新
         ? !isSubsetOfLanes(getWorkInProgressRootRenderLanes(), updateLane)
+        // Offscreen 支持：隐藏树使用不同的渲染 lanes
         : !isSubsetOfLanes(renderLanes, updateLane);
 
+      // 手势更新处理
       if (enableGestureTransition && updateLane === GestureLane) {
         // This is a gesture optimistic update. It should only be considered as part of the
         // rendered state while rendering the gesture lane and if the rendering the associated
@@ -1402,6 +1459,7 @@ function updateReducerImpl<S, A>(
         }
       }
 
+      // 跳过更新处理
       if (shouldSkipUpdate) {
         // Priority is insufficient. Skip this update. If this is the first
         // skipped update, the previous update/state is the new base
@@ -1430,6 +1488,7 @@ function updateReducerImpl<S, A>(
         );
         markSkippedUpdateLanes(updateLane);
       } else {
+        // 乐观更新处理
         // This update does have sufficient priority.
 
         // Check if this is an optimistic update.
@@ -1512,16 +1571,21 @@ function updateReducerImpl<S, A>(
           }
         }
 
+        // 状态计算
         // Process this update.
         const action = update.action;
+
+        // Strict Mode：开发环境下双重调用
         if (shouldDoubleInvokeUserFnsInHooksDEV) {
           reducer(newState, action);
         }
         if (update.hasEagerState) {
+          // Eager State：使用预先计算的状态（如果有）
           // If this update is a state update (not a reducer) and was processed eagerly,
           // we can use the eagerly computed state
           newState = ((update.eagerState: any): S);
         } else {
+          // 状态计算：调用 reducer 计算新状态
           newState = reducer(newState, action);
         }
       }
@@ -1556,11 +1620,12 @@ function updateReducerImpl<S, A>(
       }
     }
 
-    hook.memoizedState = newState;
-    hook.baseState = newBaseState;
-    hook.baseQueue = newBaseQueueLast;
+    // 状态更新
+    hook.memoizedState = newState; // 当前渲染状态
+    hook.baseState = newBaseState; // 基础状态
+    hook.baseQueue = newBaseQueueLast; // 剩余待处理的更新队列
 
-    queue.lastRenderedState = newState;
+    queue.lastRenderedState = newState; // 最后渲染的状态
   }
 
   if (baseQueue === null) {
@@ -1891,23 +1956,31 @@ function forceStoreRerender(fiber: Fiber) {
   }
 }
 
+/**
+ * 
+ * @param {*} initialState 
+ * @returns 
+ */
 function mountStateImpl<S>(initialState: (() => S) | S): Hook {
+  // 创建状态 hook
   const hook = mountWorkInProgressHook();
   if (typeof initialState === 'function') {
     const initialStateInitializer = initialState;
     // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
-    initialState = initialStateInitializer();
-    if (shouldDoubleInvokeUserFnsInHooksDEV) {
-      setIsStrictModeForDevtools(true);
-      try {
-        // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
-        initialStateInitializer();
-      } finally {
-        setIsStrictModeForDevtools(false);
-      }
-    }
+    initialState = initialStateInitializer(); // 初始化状态
+    // if (shouldDoubleInvokeUserFnsInHooksDEV) {
+    //   setIsStrictModeForDevtools(true);
+    //   try {
+    //     // $FlowFixMe[incompatible-use]: Flow doesn't like mixed types
+    //     initialStateInitializer();
+    //   } finally {
+    //     setIsStrictModeForDevtools(false);
+    //   }
+    // }
   }
+  // 保存初始状态
   hook.memoizedState = hook.baseState = initialState;
+  // 创建更新队列
   const queue: UpdateQueue<S, BasicStateAction<S>> = {
     pending: null,
     lanes: NoLanes,
@@ -1915,7 +1988,9 @@ function mountStateImpl<S>(initialState: (() => S) | S): Hook {
     lastRenderedReducer: basicStateReducer,
     lastRenderedState: (initialState: any),
   };
+  // 保存更新队列
   hook.queue = queue;
+  // 返回状态 hook
   return hook;
 }
 
@@ -1971,6 +2046,12 @@ function mountOptimistic<S, A>(
   return [passthrough, dispatch];
 }
 
+/**
+ * 更新乐观状态
+ * @param {*} passthrough 初始值
+ * @param {*} reducer 更新函数
+ * @returns 
+ */
 function updateOptimistic<S, A>(
   passthrough: S,
   reducer: ?(S, A) => S,
@@ -1996,9 +2077,10 @@ function updateOptimisticImpl<S, A>(
   //
   // Reset the base state to the passthrough. Future updates will be applied
   // on top of this.
-  hook.baseState = passthrough;
+  hook.baseState = passthrough; // 重置基础状态为 passthrough,用于后续更新
 
   // If a reducer is not provided, default to the same one used by useState.
+  // 如果没有提供更新函数,则使用 basicStateReducer
   const resolvedReducer: (S, A) => S =
     typeof reducer === 'function' ? reducer : (basicStateReducer: any);
 
@@ -2565,11 +2647,12 @@ function pushSimpleEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): Effect {
+
   const effect: Effect = {
-    tag,
-    create,
+    tag, // 1 ｜ 8 Hook 标记（如 HookHasEffect | HookPassive）
+    create, // 创建函数
     deps,
-    inst,
+    inst, // effect 实例（包含 destroy）
     // Circular
     next: (null: any),
   };
@@ -2577,16 +2660,21 @@ function pushSimpleEffect(
 }
 
 function pushEffectImpl(effect: Effect): Effect {
+  // 获取 componentUpdateQueue    如果不存在，创建一个
   let componentUpdateQueue: null | FunctionComponentUpdateQueue =
     (currentlyRenderingFiber.updateQueue: any);
+
   if (componentUpdateQueue === null) {
     componentUpdateQueue = createFunctionComponentUpdateQueue();
     currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
   }
+  // 获取 lastEffect    
   const lastEffect = componentUpdateQueue.lastEffect;
   if (lastEffect === null) {
+    // 首个 effect，创建循环链表   
     componentUpdateQueue.lastEffect = effect.next = effect;
   } else {
+    // 追加到链表 
     const firstEffect = lastEffect.next;
     lastEffect.next = effect;
     effect.next = firstEffect;
@@ -2601,16 +2689,24 @@ function createEffectInstance(): EffectInstance {
 
 function mountRef<T>(initialValue: T): {current: T} {
   const hook = mountWorkInProgressHook();
-  const ref = {current: initialValue};
-  hook.memoizedState = ref;
-  return ref;
+  const ref = {current: initialValue}; // 创建引用对象
+  hook.memoizedState = ref; // 保存引用对象
+  return ref; // 返回引用对象
 }
 
 function updateRef<T>(initialValue: T): {current: T} {
   const hook = updateWorkInProgressHook();
+  // 返回当前存储的引用
   return hook.memoizedState;
 }
 
+/**
+ * 
+ * @param {*} fiberFlags 
+ * @param {*} hookFlags 
+ * @param {*} create 
+ * @param {*} deps 
+ */
 function mountEffectImpl(
   fiberFlags: Flags,
   hookFlags: HookFlags,
@@ -2618,16 +2714,26 @@ function mountEffectImpl(
   deps: Array<mixed> | void | null,
 ): void {
   const hook = mountWorkInProgressHook();
-  const nextDeps = deps === undefined ? null : deps;
-  currentlyRenderingFiber.flags |= fiberFlags;
+  const nextDeps = deps === undefined ? null : deps; // 如果依赖项为 undefined，设为 null
+  currentlyRenderingFiber.flags |= fiberFlags; // 标记当前 fiber 有 effect
+
+  // 创建 effect 实例
   hook.memoizedState = pushSimpleEffect(
-    HookHasEffect | hookFlags,
-    createEffectInstance(),
-    create,
-    nextDeps,
+    HookHasEffect | hookFlags, // 1 ｜ 8
+    createEffectInstance(), // effect 实例
+    create, // 创建函数
+    nextDeps, // 依赖项
   );
 }
 
+/**
+ * 
+ * @param {*} fiberFlags  Fiber 标记
+ * @param {*} hookFlags Hook 标记
+ * @param {*} create effect 创建函数
+ * @param {*} deps 依赖项
+ * @returns 
+ */
 function updateEffectImpl(
   fiberFlags: Flags,
   hookFlags: HookFlags,
@@ -2636,6 +2742,7 @@ function updateEffectImpl(
 ): void {
   const hook = updateWorkInProgressHook();
   const nextDeps = deps === undefined ? null : deps;
+  // 获取现有 effect   
   const effect: Effect = hook.memoizedState;
   const inst = effect.inst;
 
@@ -2647,8 +2754,9 @@ function updateEffectImpl(
       const prevDeps = prevEffect.deps;
       // $FlowFixMe[incompatible-call] (@poteto)
       if (areHookInputsEqual(nextDeps, prevDeps)) {
+        // 依赖相同，跳过   
         hook.memoizedState = pushSimpleEffect(
-          hookFlags,
+          hookFlags, // 不添加 HookHasEffect 标记
           inst,
           create,
           nextDeps,
@@ -2658,20 +2766,27 @@ function updateEffectImpl(
     }
   }
 
+  // 依赖不同
   currentlyRenderingFiber.flags |= fiberFlags;
 
   hook.memoizedState = pushSimpleEffect(
-    HookHasEffect | hookFlags,
-    inst,
+    HookHasEffect | hookFlags, // 1 ｜ 8 带 HookHasEffect
+    inst, // 复用，复用 instance 可以保留之前的清理函数
     create,
     nextDeps,
   );
 }
 
+/**
+ * 
+ * @param {*} create 
+ * @param {*} deps 
+ */
 function mountEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
+  // 开发环境 + 严格模式
   if (
     __DEV__ &&
     (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
@@ -2684,8 +2799,10 @@ function mountEffect(
     );
   } else {
     mountEffectImpl(
-      PassiveEffect | PassiveStaticEffect,
-      HookPassive,
+      // 2048	需要 passive effect 处理
+      // 8388608	子树包含 passive effect
+      PassiveEffect | PassiveStaticEffect, // 2048 | 8388608
+      HookPassive, // 8 标识这是一个 passive effect（异步 effect），在 commit 阶段的 Passive 阶段执行
       create,
       deps,
     );
@@ -2696,53 +2813,82 @@ function updateEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
+  //  PassiveEffect 2048	需要 passive effect 处理
+  // HookPassive 8 标识这是一个 passive effect（异步 effect），在 commit 阶段的 Passive 阶段执行
   updateEffectImpl(PassiveEffect, HookPassive, create, deps);
 }
 
+
+/**
+ * 
+ * @param  {...any} Array 
+ * @param {any} 
+ * @param {*} Args 
+ */
 function useEffectEventImpl<Args, Return, F: (...Array<Args>) => Return>(
   payload: EventFunctionPayload<Args, Return, F>,
 ) {
-  currentlyRenderingFiber.flags |= UpdateEffect;
+  currentlyRenderingFiber.flags |= UpdateEffect; // 标记需要更新
+
+  // 获取/创建 updateQueue  
   let componentUpdateQueue: null | FunctionComponentUpdateQueue =
     (currentlyRenderingFiber.updateQueue: any);
+
   if (componentUpdateQueue === null) {
+    // 如果 fiber 还没有 updateQueue，创建一个并保存到 fiber 上
     componentUpdateQueue = createFunctionComponentUpdateQueue();
     currentlyRenderingFiber.updateQueue = (componentUpdateQueue: any);
+    // 将事件 payload 注册到 events 数组
     componentUpdateQueue.events = [payload];
+
   } else {
     const events = componentUpdateQueue.events;
     if (events === null) {
       componentUpdateQueue.events = [payload];
     } else {
-      events.push(payload);
+      events.push(payload); // 将事件 payload 注册到 events 数组
     }
   }
 }
 
+/**
+ * 
+ */
 function mountEvent<Args, Return, F: (...Array<Args>) => Return>(
-  callback: F,
+  callback: F, // 事件处理函数
 ): F {
   const hook = mountWorkInProgressHook();
-  const ref = {impl: callback};
-  hook.memoizedState = ref;
+  const ref = {impl: callback}; // 创建 ref 对象存储实际回调 
+  hook.memoizedState = ref; // 保存 ref 到 hook
   // $FlowIgnore[incompatible-return]
+  // 返回包装函数    
   return function eventFn() {
+    // 禁止在渲染中调用
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
         "A function wrapped in useEffectEvent can't be called during rendering.",
       );
     }
+    // 调用时通过 ref.impl 获取最新的回调实现
     return ref.impl.apply(undefined, arguments);
   };
 }
 
+/**
+ * 
+ * @param  {...any} Array 
+ * @param {any} 
+ * @param {*} Args 
+ */
 function updateEvent<Args, Return, F: (...Array<Args>) => Return>(
-  callback: F,
+  callback: F, // 新的事件处理函数
 ): F {
   const hook = updateWorkInProgressHook();
   const ref = hook.memoizedState;
+
   useEffectEventImpl({ref, nextImpl: callback});
   // $FlowIgnore[incompatible-return]
+  // 包装后的事件函数
   return function eventFn() {
     if (isInvalidExecutionContextForEventFunction()) {
       throw new Error(
@@ -2757,6 +2903,8 @@ function mountInsertionEffect(
   create: () => (() => void) | void,
   deps: Array<mixed> | void | null,
 ): void {
+  // 4 UpdateEffect
+  // 2 HookInsertion
   mountEffectImpl(UpdateEffect, HookInsertion, create, deps);
 }
 
@@ -2788,25 +2936,37 @@ function updateLayoutEffect(
   return updateEffectImpl(UpdateEffect, HookLayout, create, deps);
 }
 
+/**
+ * 
+ * @param {*} create 
+ * @param {*} ref 
+ * @returns 
+ */
 function imperativeHandleEffect<T>(
   create: () => T,
   ref: {current: T | null} | ((inst: T | null) => mixed) | null | void,
 ): void | (() => void) {
+  // 函数 ref 处理
   if (typeof ref === 'function') {
     const refCallback = ref;
-    const inst = create();
-    const refCleanup = refCallback(inst);
+    const inst = create(); // 创建实例 
+    const refCleanup = refCallback(inst); // 调用 ref
+
+    // 返回清理函数
     return () => {
       if (typeof refCleanup === 'function') {
         // $FlowFixMe[incompatible-use] we need to assume no parameters
         refCleanup();
       } else {
+        // 清理 ref
         refCallback(null);
       }
     };
+    // 检查 ref 是否为对象
   } else if (ref !== null && ref !== undefined) {
     const refObject = ref;
     if (__DEV__) {
+      // 开发环境检查 refObject 是否有 current 属性
       if (!refObject.hasOwnProperty('current')) {
         console.error(
           'Expected useImperativeHandle() first argument to either be a ' +
@@ -2815,20 +2975,28 @@ function imperativeHandleEffect<T>(
         );
       }
     }
-    const inst = create();
-    refObject.current = inst;
+    const inst = create(); // 创建实例 
+    refObject.current = inst; // 设置实例为 refObject.current
+    // 返回清理函数
     return () => {
-      refObject.current = null;
+      refObject.current = null; 
     };
   }
 }
 
+/**
+ * 
+ * @param {*} ref 
+ * @param {*} create 
+ * @param {*} deps 
+ */
 function mountImperativeHandle<T>(
   ref: {current: T | null} | ((inst: T | null) => mixed) | null | void,
   create: () => T,
   deps: Array<mixed> | void | null,
 ): void {
   if (__DEV__) {
+    // 检查 create 是否为函数
     if (typeof create !== 'function') {
       console.error(
         'Expected useImperativeHandle() second argument to be a function ' +
@@ -2839,19 +3007,24 @@ function mountImperativeHandle<T>(
   }
 
   // TODO: If deps are provided, should we skip comparing the ref itself?
+  // 处理依赖数组，将 ref 加入依赖数组
   const effectDeps =
     deps !== null && deps !== undefined ? deps.concat([ref]) : null;
 
-  let fiberFlags: Flags = UpdateEffect | LayoutStaticEffect;
-  if (
-    __DEV__ &&
-    (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
-  ) {
-    fiberFlags |= MountLayoutDevEffect;
-  }
+  
+  // 设置 Fiber 标记   
+  let fiberFlags: Flags = UpdateEffect | LayoutStaticEffect; // 4  4194304
+  // if (
+  //   __DEV__ &&
+  //   (currentlyRenderingFiber.mode & StrictEffectsMode) !== NoMode
+  // ) {
+  //   fiberFlags |= MountLayoutDevEffect;
+  // }
+
+  // 注册 Layout Effect 
   mountEffectImpl(
     fiberFlags,
-    HookLayout,
+    HookLayout, // 4
     imperativeHandleEffect.bind(null, create, ref),
     effectDeps,
   );
@@ -2877,8 +3050,8 @@ function updateImperativeHandle<T>(
     deps !== null && deps !== undefined ? deps.concat([ref]) : null;
 
   updateEffectImpl(
-    UpdateEffect,
-    HookLayout,
+    UpdateEffect, // 4
+    HookLayout, // 4
     imperativeHandleEffect.bind(null, create, ref),
     effectDeps,
   );
@@ -2894,32 +3067,44 @@ const updateDebugValue = mountDebugValue;
 
 function mountCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = mountWorkInProgressHook();
+  // 处理依赖数组
   const nextDeps = deps === undefined ? null : deps;
+  // 保存回调和依赖
   hook.memoizedState = [callback, nextDeps];
-  return callback;
+  return callback; // 返回回调
 }
 
 function updateCallback<T>(callback: T, deps: Array<mixed> | void | null): T {
   const hook = updateWorkInProgressHook();
-  const nextDeps = deps === undefined ? null : deps;
+  const nextDeps = deps === undefined ? null : deps; // 处理依赖数组
   const prevState = hook.memoizedState;
   if (nextDeps !== null) {
     const prevDeps: Array<mixed> | null = prevState[1];
+    // 依赖数组相等，直接返回之前存储的回调
     if (areHookInputsEqual(nextDeps, prevDeps)) {
       return prevState[0];
     }
   }
+  // 依赖数组不相等，更新回调和依赖
   hook.memoizedState = [callback, nextDeps];
-  return callback;
+  return callback; // 返回回调
 }
 
+/**
+ * 
+ * @param {*} nextCreate  计算值的工厂函数
+ * @param {*} deps 依赖数组
+ * @returns 
+ */
 function mountMemo<T>(
   nextCreate: () => T,
   deps: Array<mixed> | void | null,
 ): T {
   const hook = mountWorkInProgressHook();
-  const nextDeps = deps === undefined ? null : deps;
-  const nextValue = nextCreate();
+  const nextDeps = deps === undefined ? null : deps; // 处理依赖数组
+  const nextValue = nextCreate(); // 执行 nextCreate 函数，获取新的值
+
+  // 开发环境下，双调用 nextCreate 函数，检查是否有 side effect
   if (shouldDoubleInvokeUserFnsInHooksDEV) {
     setIsStrictModeForDevtools(true);
     try {
@@ -2928,8 +3113,9 @@ function mountMemo<T>(
       setIsStrictModeForDevtools(false);
     }
   }
+  // 保存结果和依赖
   hook.memoizedState = [nextValue, nextDeps];
-  return nextValue;
+  return nextValue; // 返回计算结果
 }
 
 function updateMemo<T>(
@@ -2942,11 +3128,13 @@ function updateMemo<T>(
   // Assume these are defined. If they're not, areHookInputsEqual will warn.
   if (nextDeps !== null) {
     const prevDeps: Array<mixed> | null = prevState[1];
+    // 依赖数组相等，直接返回之前的计算结果
     if (areHookInputsEqual(nextDeps, prevDeps)) {
       return prevState[0];
     }
   }
-  const nextValue = nextCreate();
+  const nextValue = nextCreate(); // 执行 nextCreate 函数，获取新的值
+  // 开发环境下，双调用 nextCreate 函数，检查是否有 side effect
   if (shouldDoubleInvokeUserFnsInHooksDEV) {
     setIsStrictModeForDevtools(true);
     try {
@@ -2955,8 +3143,9 @@ function updateMemo<T>(
       setIsStrictModeForDevtools(false);
     }
   }
+  // 保存结果和依赖
   hook.memoizedState = [nextValue, nextDeps];
-  return nextValue;
+  return nextValue; // 返回计算结果
 }
 
 function mountDeferredValue<T>(value: T, initialValue?: T): T {
@@ -2997,7 +3186,16 @@ function isRenderingDeferredWork(): boolean {
   return !includesSomeLane(rootRenderLanes, UpdateLanes);
 }
 
+/**
+ * 
+ * @param {*} hook 钩子实例
+ * @param {*} value 当前值
+ * @param {*} initialValue 初始值
+ * @returns 
+ */
 function mountDeferredValueImpl<T>(hook: Hook, value: T, initialValue?: T): T {
+
+  // 有初始值、不是延迟渲染触发的
   if (
     // When `initialValue` is provided, we defer the initial render even if the
     // current render is not synchronous.
@@ -3008,29 +3206,41 @@ function mountDeferredValueImpl<T>(hook: Hook, value: T, initialValue?: T): T {
     !isRenderingDeferredWork()
   ) {
     // Render with the initial value
-    hook.memoizedState = initialValue;
+    hook.memoizedState = initialValue; // 记录初始值
 
     // Schedule a deferred render to switch to the final value.
-    const deferredLane = requestDeferredLane();
+    const deferredLane = requestDeferredLane(); // 请求延迟渲染车道
+
+    // 合并延迟渲染车道到当前渲染车道
     currentlyRenderingFiber.lanes = mergeLanes(
       currentlyRenderingFiber.lanes,
       deferredLane,
     );
+    // 标记跳过的更新车道
     markSkippedUpdateLanes(deferredLane);
 
-    return initialValue;
+    return initialValue; // 返回初始值
   } else {
     hook.memoizedState = value;
     return value;
   }
 }
 
+/**
+ * 
+ * @param {*} hook 钩子实例
+ * @param {*} prevValue 上一个值
+ * @param {*} value 当前值
+ * @param {*} initialValue 初始值
+ * @returns 
+ */
 function updateDeferredValueImpl<T>(
   hook: Hook,
   prevValue: T,
   value: T,
   initialValue?: T,
 ): T {
+  // 如果当前值与上一个值相同，直接返回当前值
   if (is(value, prevValue)) {
     // The incoming value is referentially identical to the currently rendered
     // value, so we can bail out quickly.
@@ -3039,6 +3249,7 @@ function updateDeferredValueImpl<T>(
     // Received a new value that's different from the current value.
 
     // Check if we're inside a hidden tree
+    // 如果当前隐藏树
     if (isCurrentTreeHidden()) {
       // Revealing a prerendered tree is considered the same as mounting new
       // one, so we reuse the "mount" path in this case.
@@ -3053,6 +3264,7 @@ function updateDeferredValueImpl<T>(
 
     const shouldDeferValue =
       !includesOnlyNonUrgentLanes(renderLanes) && !isRenderingDeferredWork();
+
     if (shouldDeferValue) {
       // This is an urgent update. Since the value has changed, keep using the
       // previous value and spawn a deferred render to update it later.
@@ -3067,7 +3279,10 @@ function updateDeferredValueImpl<T>(
 
       // Reuse the previous value. We do not need to mark this as an update,
       // because we did not render a new value.
+      // 返回旧值
       return prevValue;
+
+      // 非紧急渲染，直接使用最新值
     } else {
       // This is not an urgent update, so we can use the latest value regardless
       // of what it is. No need to defer it.
@@ -3086,21 +3301,33 @@ function releaseAsyncTransition() {
   }
 }
 
+/**
+ * 开始一个异步过渡
+ * @param {*} fiber 
+ * @param {*} queue  更新队列
+ * @param {*} pendingState  立即显示的临时状态
+ * @param {*} finishedState  最终状态
+ * @param {*} callback  过渡完成后的回调函数
+ * @param {*} options 
+ */
 function startTransition<S>(
   fiber: Fiber,
   queue: UpdateQueue<S | Thenable<S>, BasicStateAction<S | Thenable<S>>>,
-  pendingState: S,
-  finishedState: S,
+  pendingState: S, // 首次 true
+  finishedState: S, // 首次 false
   callback: () => mixed,
   options?: StartTransitionOptions,
 ): void {
   const previousPriority = getCurrentUpdatePriority();
+  // 提升优先级
   setCurrentUpdatePriority(
     higherEventPriority(previousPriority, ContinuousEventPriority),
   );
 
   const prevTransition = ReactSharedInternals.T;
+  // 创建 transition 对象
   const currentTransition: Transition = ({}: any);
+  // 支持 view transition
   if (enableViewTransition) {
     currentTransition.types =
       prevTransition !== null
@@ -3112,17 +3339,19 @@ function startTransition<S>(
           prevTransition.types
         : null;
   }
+  // 支持 gesture transition
   if (enableGestureTransition) {
     currentTransition.gesture = null;
   }
+  // 支持过渡跟踪
   if (enableTransitionTracing) {
     currentTransition.name =
       options !== undefined && options.name !== undefined ? options.name : null;
     currentTransition.startTime = now();
   }
-  if (__DEV__) {
-    currentTransition._updatedFibers = new Set();
-  }
+  // if (__DEV__) {
+  //   currentTransition._updatedFibers = new Set();
+  // }
 
   // We don't really need to use an optimistic update here, because we
   // schedule a second "revert" update below (which we use to suspend the
@@ -3131,12 +3360,14 @@ function startTransition<S>(
   // diverges; for example, both an optimistic update and this one should
   // share the same lane.
   ReactSharedInternals.T = currentTransition;
+  // 触发乐观更新
   dispatchOptimisticSetState(fiber, false, queue, pendingState);
 
   try {
-    const returnValue = callback();
+    const returnValue = callback(); // 执行过渡回调函数
     const onStartTransitionFinish = ReactSharedInternals.S;
     if (onStartTransitionFinish !== null) {
+      // 通知 onStartTransitionFinish 回调过渡完成
       onStartTransitionFinish(currentTransition, returnValue);
     }
 
@@ -3148,6 +3379,7 @@ function startTransition<S>(
     //
     // In the async case, the resulting render will suspend until the async
     // action scope has finished.
+    // 异步过渡
     if (
       returnValue !== null &&
       typeof returnValue === 'object' &&
@@ -3161,10 +3393,12 @@ function startTransition<S>(
       }
       // Create a thenable that resolves to `finishedState` once the async
       // action has completed.
+      // 创建完成状态的 thenable
       const thenableForFinishedState = chainThenableValue(
         thenable,
         finishedState,
       );
+      // 调度最终状态
       dispatchSetStateInternal(
         fiber,
         queue,
@@ -3172,6 +3406,7 @@ function startTransition<S>(
         requestUpdateLane(fiber),
       );
     } else {
+      // 调度最终状态
       dispatchSetStateInternal(
         fiber,
         queue,
@@ -3188,6 +3423,7 @@ function startTransition<S>(
       status: 'rejected',
       reason: error,
     };
+
     dispatchSetStateInternal(
       fiber,
       queue,
@@ -3394,12 +3630,18 @@ export function requestFormReset(formFiber: Fiber) {
   );
 }
 
+/**
+ * 挂载 useTransition hook，返回初始状态和 start 函数
+ * @returns 
+ */
 function mountTransition(): [
   boolean,
   (callback: () => void, options?: StartTransitionOptions) => void,
 ] {
+  // 创建状态 hook，初始值为 false
   const stateHook = mountStateImpl((false: Thenable<boolean> | boolean));
   // The `start` method never changes.
+  // 创建 start 函数（永远不会变化）      
   const start = startTransition.bind(
     null,
     currentlyRenderingFiber,
@@ -3407,8 +3649,10 @@ function mountTransition(): [
     true,
     false,
   );
+  // 创建 hook 并保存 start
   const hook = mountWorkInProgressHook();
   hook.memoizedState = start;
+  // 返回 [isPending, start]
   return [false, start];
 }
 
@@ -3552,6 +3796,12 @@ function refreshCache<T>(fiber: Fiber, seedKey: ?() => T, seedValue: T): void {
   // TODO: Warn if unmounted?
 }
 
+/**
+ * 处理 useReducer 的 dispatch，调度 reducer 更新
+ * @param {*} fiber 
+ * @param {*} queue 
+ * @param {*} action 
+ */
 function dispatchReducerAction<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -3560,6 +3810,8 @@ function dispatchReducerAction<S, A>(
   if (__DEV__) {
     // using a reference to `arguments` bails out of GCC optimizations which affect function arity
     const args = arguments;
+
+    // dispatchReducerAction 不支持第二个回调参数
     if (typeof args[3] === 'function') {
       console.error(
         "State updates from the useState() and useReducer() Hooks don't support the " +
@@ -3569,8 +3821,9 @@ function dispatchReducerAction<S, A>(
     }
   }
 
-  const lane = requestUpdateLane(fiber);
+  const lane = requestUpdateLane(fiber); // 获取更新优先级车道
 
+  // 创建更新对象
   const update: Update<S, A> = {
     lane,
     revertLane: NoLane,
@@ -3581,13 +3834,17 @@ function dispatchReducerAction<S, A>(
     next: (null: any),
   };
 
+  // 1、渲染阶段更新，直接入队
   if (isRenderPhaseUpdate(fiber)) {
     enqueueRenderPhaseUpdate(queue, update);
   } else {
+    // 2、提交阶段更新
+
+    // 将更新加入 fiber 的更新队列
     const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
     if (root !== null) {
       startUpdateTimerByLane(lane, 'dispatch()', fiber);
-      scheduleUpdateOnFiber(root, fiber, lane);
+      scheduleUpdateOnFiber(root, fiber, lane); // 调度 fiber 更新
       entangleTransitionUpdate(root, queue, lane);
     }
   }
@@ -3631,43 +3888,50 @@ function dispatchSetStateInternal<S, A>(
   action: A,
   lane: Lane,
 ): boolean {
+  // 创建更新对象
   const update: Update<S, A> = {
-    lane,
-    revertLane: NoLane,
-    gesture: null,
-    action,
-    hasEagerState: false,
-    eagerState: null,
-    next: (null: any),
+    lane, // 更新优先级
+    revertLane: NoLane, // 回滚优先级
+    gesture: null, // 支持 gesture transition
+    action, // 更新操作
+    hasEagerState: false, // 是否有立即计算的状态
+    eagerState: null, // 立即计算的状态
+    next: (null: any), // 下一个更新
   };
 
+  // 1、渲染阶段更新，直接入队
   if (isRenderPhaseUpdate(fiber)) {
     enqueueRenderPhaseUpdate(queue, update);
   } else {
+    // 2、提交阶段更新
     const alternate = fiber.alternate;
     if (
-      fiber.lanes === NoLanes &&
-      (alternate === null || alternate.lanes === NoLanes)
+      fiber.lanes === NoLanes && // 当前 fiber 没有 车道优先级
+      (alternate === null || alternate.lanes === NoLanes) // 交替更新也没有优先级
     ) {
       // The queue is currently empty, which means we can eagerly compute the
       // next state before entering the render phase. If the new state is the
       // same as the current state, we may be able to bail out entirely.
-      const lastRenderedReducer = queue.lastRenderedReducer;
+      // 计算状态值
+      const lastRenderedReducer = queue.lastRenderedReducer; // 上一次渲染的 reducer
       if (lastRenderedReducer !== null) {
         let prevDispatcher = null;
-        if (__DEV__) {
-          prevDispatcher = ReactSharedInternals.H;
-          ReactSharedInternals.H = InvalidNestedHooksDispatcherOnUpdateInDEV;
-        }
+        // if (__DEV__) {
+        //   prevDispatcher = ReactSharedInternals.H;
+        //   ReactSharedInternals.H = InvalidNestedHooksDispatcherOnUpdateInDEV;
+        // }
         try {
-          const currentState: S = (queue.lastRenderedState: any);
+          const currentState: S = (queue.lastRenderedState: any); // 上一次渲染的状态
+          // 计算立即计算的状态
           const eagerState = lastRenderedReducer(currentState, action);
           // Stash the eagerly computed state, and the reducer used to compute
           // it, on the update object. If the reducer hasn't changed by the
           // time we enter the render phase, then the eager state can be used
           // without calling the reducer again.
-          update.hasEagerState = true;
+          update.hasEagerState = true; // 标记有立即计算的状态
           update.eagerState = eagerState;
+
+          // 如果立即计算的状态与当前状态相同，直接返回
           if (is(eagerState, currentState)) {
             // Fast path. We can bail out without scheduling React to re-render.
             // It's still possible that we'll need to rebase this update later,
@@ -3687,23 +3951,33 @@ function dispatchSetStateInternal<S, A>(
       }
     }
 
+    // 将更新加入 fiber 的更新队列
     const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
     if (root !== null) {
-      scheduleUpdateOnFiber(root, fiber, lane);
+      scheduleUpdateOnFiber(root, fiber, lane); // 调度 fiber 更新
       entangleTransitionUpdate(root, queue, lane);
       return true;
     }
   }
+
+
   return false;
 }
 
+/**
+ * 更新乐观状态
+ * @param {*} fiber 当前 fiber
+ * @param {*} throwIfDuringRender 是否在渲染阶段抛出错误
+ * @param {*} queue 更新队列
+ * @param {*} action 更新操作
+ */
 function dispatchOptimisticSetState<S, A>(
   fiber: Fiber,
   throwIfDuringRender: boolean,
   queue: UpdateQueue<S, A>,
   action: A,
 ): void {
-  const transition = requestCurrentTransition();
+  const transition = requestCurrentTransition(); // 获取当前过渡上下文
 
   if (__DEV__) {
     if (transition === null) {
@@ -3744,15 +4018,18 @@ function dispatchOptimisticSetState<S, A>(
 
   // For regular Transitions an optimistic update commits synchronously.
   // For gesture Transitions an optimistic update commits on the GestureLane.
+  // 确定更新的车道
   const lane =
     enableGestureTransition && transition !== null && transition.gesture
-      ? GestureLane
-      : SyncLane;
+      ? GestureLane // 手势过渡：使用 GestureLane 更新
+      : SyncLane; // 普通过渡：使用 SyncLane 更新
+
+  // 创建更新对象
   const update: Update<S, A> = {
     lane: lane,
     // After committing, the optimistic update is "reverted" using the same
     // lane as the transition it's associated with.
-    revertLane: requestTransitionLane(transition),
+    revertLane: requestTransitionLane(transition), // 回退
     gesture: null,
     action,
     hasEagerState: false,
@@ -3760,6 +4037,7 @@ function dispatchOptimisticSetState<S, A>(
     next: (null: any),
   };
 
+  // 如果在渲染阶段调用，发出警告或错误
   if (isRenderPhaseUpdate(fiber)) {
     // When calling startTransition during render, this warns instead of
     // throwing because throwing would be a breaking change. setOptimisticState
@@ -3776,6 +4054,7 @@ function dispatchOptimisticSetState<S, A>(
       }
     }
   } else {
+    // 将更新加入 fiber 的更新队列
     const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
     if (root !== null) {
       // NOTE: The optimistic update implementation assumes that the transition
@@ -3783,9 +4062,11 @@ function dispatchOptimisticSetState<S, A>(
       // holds because the optimistic update is always synchronous. If we ever
       // change that, we'll need to account for this.
       startUpdateTimerByLane(lane, 'setOptimistic()', fiber);
+      // 调度更新
       scheduleUpdateOnFiber(root, fiber, lane);
       // Optimistic updates are always synchronous, so we don't need to call
       // entangleTransitionUpdate here.
+      // 处理手势过渡
       if (enableGestureTransition && transition !== null) {
         const provider = transition.gesture;
         if (provider !== null) {

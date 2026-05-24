@@ -441,15 +441,25 @@ let workInProgress: Fiber | null = null;
 let workInProgressRootRenderLanes: Lanes = NoLanes;
 
 export opaque type SuspendedReason = 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+// 未挂起，正常渲染
 const NotSuspended: SuspendedReason = 0;
+// 渲染过程中抛出异常
 const SuspendedOnError: SuspendedReason = 1;
+// 等待异步数据
 const SuspendedOnData: SuspendedReason = 2;
+// 因立即任务挂起
 const SuspendedOnImmediate: SuspendedReason = 3;
+// 因实例挂起
 const SuspendedOnInstance: SuspendedReason = 4;
+// 因实例挂起但准备继续
 const SuspendedOnInstanceAndReadyToContinue: SuspendedReason = 5;
+// 因废弃的 Promise 挂起
 const SuspendedOnDeprecatedThrowPromise: SuspendedReason = 6;
+// 挂起准备继续
 const SuspendedAndReadyToContinue: SuspendedReason = 7;
+// 因 hydration 挂起
 const SuspendedOnHydration: SuspendedReason = 8;
+// 因 action 挂起
 const SuspendedOnAction: SuspendedReason = 9;
 
 // When this is true, the work-in-progress fiber just suspended (or errored) and
@@ -714,35 +724,44 @@ let legacyErrorBoundariesThatAlreadyFailed: Set<mixed> | null = null;
 type SuspendedCommitReason = null | string;
 
 type DelayedCommitReason = 0 | 1 | 2 | 3;
-const IMMEDIATE_COMMIT = 0;
-const ABORTED_VIEW_TRANSITION_COMMIT = 1;
-const DELAYED_PASSIVE_COMMIT = 2;
-const ANIMATION_STARTED_COMMIT = 3;
+const IMMEDIATE_COMMIT = 0; // 立即提交，无延迟
+const ABORTED_VIEW_TRANSITION_COMMIT = 1;// 因 view transition 被中断而延迟提交
+const DELAYED_PASSIVE_COMMIT = 2; // 因 被动副作用 被中断而延迟提交
+const ANIMATION_STARTED_COMMIT = 3; // 因 动画开始 而延迟提交
 
-const NO_PENDING_EFFECTS = 0;
-const PENDING_MUTATION_PHASE = 1;
-const PENDING_LAYOUT_PHASE = 2;
-const PENDING_AFTER_MUTATION_PHASE = 3;
-const PENDING_SPAWNED_WORK = 4;
-const PENDING_PASSIVE_PHASE = 5;
-const PENDING_GESTURE_MUTATION_PHASE = 6;
-const PENDING_GESTURE_ANIMATION_PHASE = 7;
-let pendingEffectsStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 = 0;
-let pendingEffectsRoot: FiberRoot = (null: any);
-let pendingFinishedWork: Fiber = (null: any);
-let pendingEffectsLanes: Lanes = NoLanes;
-let pendingEffectsRemainingLanes: Lanes = NoLanes;
-let pendingEffectsRenderEndTime: number = -0; // Profiling-only
-let pendingPassiveTransitions: Array<Transition> | null = null;
-let pendingRecoverableErrors: null | Array<CapturedValue<mixed>> = null;
-let pendingViewTransition: null | RunningViewTransition = null;
+const NO_PENDING_EFFECTS = 0; // 无待处理effect
+const PENDING_MUTATION_PHASE = 1; // 带出来的 mutation阶段
+const PENDING_LAYOUT_PHASE = 2; // 待处理的 layout 阶段
+const PENDING_AFTER_MUTATION_PHASE = 3; // 待处理的 After Mutation 阶段
+const PENDING_SPAWNED_WORK = 4; // 待处理的衍生 work （suspense）
+const PENDING_PASSIVE_PHASE = 5; // 待处理 passive 阶段 useEffect 清理和执行
+const PENDING_GESTURE_MUTATION_PHASE = 6; // 待处理的 Gesture Mutation 阶段
+const PENDING_GESTURE_ANIMATION_PHASE = 7; // 待处理的 Gesture Animation 阶段
+
+let pendingEffectsStatus: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 = 0; // 当前提交阶段的状态
+let pendingEffectsRoot: FiberRoot = (null: any); // 当前正在处理的根节点
+let pendingFinishedWork: Fiber = (null: any); // 已完成工作的fiber
+let pendingEffectsLanes: Lanes = NoLanes; // 当前处理的 lanes
+let pendingEffectsRemainingLanes: Lanes = NoLanes; // 剩余待处理的 lanes
+
+// 性能分析
+let pendingEffectsRenderEndTime: number = -0; // Profiling-only 渲染结束的时间
+let pendingPassiveTransitions: Array<Transition> | null = null; // 待处理的 passive transition
+let pendingRecoverableErrors: null | Array<CapturedValue<mixed>> = null; // 待处理的可恢复错误
+let pendingViewTransition: null | RunningViewTransition = null; // 待处理的 view transition
+// 待处理的 view transition 事件
 let pendingViewTransitionEvents: Array<
   (types: Array<string>) => void | (() => void),
 > | null = null;
+// 待处理的 transition 类型
 let pendingTransitionTypes: null | TransitionTypes = null;
-let pendingDidIncludeRenderPhaseUpdate: boolean = false;
+// 是否包含渲染阶段的更新
+let pendingDidIncludeRenderPhaseUpdate: boolean = false; 
+// 提交挂起原因
 let pendingSuspendedCommitReason: SuspendedCommitReason = null; // Profiling-only
+// 提交延迟原因
 let pendingDelayedCommitReason: DelayedCommitReason = IMMEDIATE_COMMIT; // Profiling-only
+// 挂起的 view transition 原因
 let pendingSuspendedViewTransitionReason: null | string = null; // Profiling-only
 
 // Use these to prevent an infinite loop of nested updates
@@ -777,8 +796,9 @@ export function getWorkInProgressRootRenderLanes(): Lanes {
 
 export function hasPendingCommitEffects(): boolean {
   return (
-    pendingEffectsStatus !== NO_PENDING_EFFECTS &&
-    pendingEffectsStatus !== PENDING_PASSIVE_PHASE
+    // 检查是否有待处理的同步工作或被动工作
+    pendingEffectsStatus !== NO_PENDING_EFFECTS && // 0
+    pendingEffectsStatus !== PENDING_PASSIVE_PHASE // 5
   );
 }
 
@@ -807,30 +827,26 @@ export function getCurrentTime(): number {
   return now();
 }
 
+// 负责根据当前上下文决定更新应该在哪个优先级车道上执行
 export function requestUpdateLane(fiber: Fiber): Lane {
   // Special cases
   const mode = fiber.mode;
+  // 在 Legacy Mode（非并发模式）下，所有更新都是同步的，直接返回最高优先级的 SyncLane
   if (!disableLegacyMode && (mode & ConcurrentMode) === NoMode) {
     return (SyncLane: Lane);
+
+    // 在渲染阶段调用 setState 时（不推荐的做法），复用当前渲染的 lanes，使更新能在同一渲染周期内刷新。
   } else if (
     (executionContext & RenderContext) !== NoContext &&
     workInProgressRootRenderLanes !== NoLanes
   ) {
-    // This is a render phase update. These are not officially supported. The
-    // old behavior is to give this the same "thread" (lanes) as
-    // whatever is currently rendering. So if you call `setState` on a component
-    // that happens later in the same render, it will flush. Ideally, we want to
-    // remove the special case and treat them as if they came from an
-    // interleaved event. Regardless, this pattern is not officially supported.
-    // This behavior is only a fallback. The flag only exists until we can roll
-    // out the setState warning, since existing code might accidentally rely on
-    // the current behavior.
     return pickArbitraryLane(workInProgressRootRenderLanes);
   }
 
   const transition = requestCurrentTransition();
   if (transition !== null) {
     if (enableGestureTransition) {
+      // 手势 Transition 有特殊限制，只能更新 useOptimistic hook
       if (transition.gesture) {
         throw new Error(
           'Cannot setState on regular state inside a startGestureTransition. ' +
@@ -847,9 +863,11 @@ export function requestUpdateLane(fiber: Fiber): Lane {
       transition._updatedFibers.add(fiber);
     }
 
+    // 在 startTransition 中发起的更新，使用 Transition lane
     return requestTransitionLane(transition);
   }
 
+  // 据当前事件优先级决定更新的 lane
   return eventPriorityToLane(resolveUpdatePriority());
 }
 
@@ -970,6 +988,13 @@ export function peekDeferredLane(): Lane {
   return workInProgressDeferredLane;
 }
 
+/**
+ * scheduleUpdateOnFiber 是 React Reconciler 的核心调度入口函数，
+ * 负责将更新调度到指定的 Fiber 节点，并触发后续的渲染流程。
+ * @param {*} root 应用的根节点
+ * @param {*} fiber 需要更新的 Fiber 节点
+ * @param {*} lane 更新的优先级
+ */
 export function scheduleUpdateOnFiber(
   root: FiberRoot,
   fiber: Fiber,
@@ -989,11 +1014,12 @@ export function scheduleUpdateOnFiber(
 
   // Check if the work loop is currently suspended and waiting for data to
   // finish loading.
+  // 如果当前渲染被挂起，新的更新可能会解除挂起状态，需要中断当前渲染并重试。
   if (
     // Suspended render phase
     (root === workInProgressRoot &&
-      (workInProgressSuspendedReason === SuspendedOnData ||
-        workInProgressSuspendedReason === SuspendedOnAction)) ||
+      (workInProgressSuspendedReason === SuspendedOnData || // 2
+        workInProgressSuspendedReason === SuspendedOnAction)) || // 9
     // Suspended commit phase
     root.cancelPendingCommit !== null
   ) {
@@ -1010,8 +1036,10 @@ export function scheduleUpdateOnFiber(
   }
 
   // Mark that the root has a pending update.
+  // 标记该 root 有待处理的更新
   markRootUpdated(root, lane);
 
+  // 处理在渲染阶段触发的更新（不推荐但允许），记录相关 lanes。
   if (
     (executionContext & RenderContext) !== NoContext &&
     root === workInProgressRoot
@@ -1031,11 +1059,11 @@ export function scheduleUpdateOnFiber(
   } else {
     // This is a normal update, scheduled from outside the render phase. For
     // example, during an input event.
-    if (enableUpdaterTracking) {
-      if (isDevToolsPresent) {
-        addFiberToLanesMap(root, fiber, lane);
-      }
-    }
+    // if (enableUpdaterTracking) {
+    //   if (isDevToolsPresent) {
+    //     addFiberToLanesMap(root, fiber, lane);
+    //   }
+    // }
 
     warnIfUpdatesNotWrappedWithActDEV(fiber);
 
@@ -1059,7 +1087,7 @@ export function scheduleUpdateOnFiber(
           lane,
         );
       }
-      if (workInProgressRootExitStatus === RootSuspendedWithDelay) {
+      if (workInProgressRootExitStatus === RootSuspendedWithDelay) { // 4
         // The root already suspended with a delay, which means this render
         // definitely won't finish. Since we have a new update, let's mark it as
         // suspended now, right before marking the incoming update. This has the
@@ -1076,12 +1104,15 @@ export function scheduleUpdateOnFiber(
       }
     }
 
+    // 确保 root 被正确调度，触发渲染流程
     ensureRootIsScheduled(root);
+
+    // Legacy Mode 同步更新
     if (
       lane === SyncLane &&
-      executionContext === NoContext &&
-      !disableLegacyMode &&
-      (fiber.mode & ConcurrentMode) === NoMode
+      executionContext === NoContext && // 不在任何执行上下文
+      !disableLegacyMode && // Legacy Mode 未被禁用
+      (fiber.mode & ConcurrentMode) === NoMode // Fiber 不在并发模式
     ) {
       if (__DEV__ && ReactSharedInternals.isBatchingLegacy) {
         // Treat `act` as if it's inside `batchedUpdates`, even in legacy mode.
@@ -1092,7 +1123,7 @@ export function scheduleUpdateOnFiber(
         // without immediately flushing it. We only do this for user-initiated
         // updates, to preserve historical behavior of legacy mode.
         resetRenderTimer();
-        flushSyncWorkOnLegacyRootsOnly();
+        flushSyncWorkOnLegacyRootsOnly(); // 立即执行所有同步工作
       }
     }
   }
@@ -1120,11 +1151,19 @@ export function isUnsafeClassRenderPhaseUpdate(fiber: Fiber): boolean {
   return (executionContext & RenderContext) !== NoContext;
 }
 
+/**
+ * performWorkOnRoot 是 React Reconciler 的主入口函数，
+ * 负责协调整个渲染流程，包括渲染阶段和提交阶段。
+ * @param {*} root 
+ * @param {*} lanes 
+ * @param {*} forceSync 
+ */
 export function performWorkOnRoot(
   root: FiberRoot,
   lanes: Lanes,
   forceSync: boolean,
 ): void {
+  // 确保不在渲染/提交阶段        
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
     throw new Error('Should not already be working.');
   }
@@ -1151,19 +1190,22 @@ export function performWorkOnRoot(
   // We disable time-slicing in some cases: if the work has been CPU-bound
   // for too long ("expired" work, to prevent starvation), or we're in
   // sync-updates-by-default mode.
+  // 时间切片决策
   const shouldTimeSlice =
-    (!forceSync &&
-      !includesBlockingLane(lanes) &&
-      !includesExpiredLane(root, lanes)) ||
+    (!forceSync && // 不强制同步更新
+      !includesBlockingLane(lanes) && // 不包含阻塞车道
+      !includesExpiredLane(root, lanes)) || // 不包含过期车道
     // If we're prerendering, then we should use the concurrent work loop
     // even if the lanes are synchronous, so that prerendering never blocks
     // the main thread.
     // TODO: We should consider doing this whenever a sync lane is suspended,
     // even for regular pings.
-    checkIfRootIsPrerendering(root, lanes);
+    checkIfRootIsPrerendering(root, lanes); // 检查是否预渲染
 
   let exitStatus: RootExitStatus = shouldTimeSlice
+    // 并发模式：renderRootConcurrent（可中断）
     ? renderRootConcurrent(root, lanes)
+    // 同步模式：renderRootSync（不可中断）
     : renderRootSync(root, lanes, true);
 
   let renderWasConcurrent = shouldTimeSlice;
@@ -1171,6 +1213,7 @@ export function performWorkOnRoot(
   do {
     if (exitStatus === RootInProgress) {
       // Render phase is still in progress.
+      // 渲染进行中（挂起）
       if (workInProgressRootIsPrerendering && !shouldTimeSlice) {
         // We're in prerendering mode, but time slicing is not enabled. This
         // happens when something suspends during a synchronous update. Exit the
@@ -1230,10 +1273,14 @@ export function performWorkOnRoot(
       }
 
       // Check if something threw
+      // 只在 Concurrent Mode 下处理并发错误恢复。
+      // 全局禁用 Legacy Mode
+      // 当前 root 不是 Legacy 模式
       if (
         (disableLegacyMode || root.tag !== LegacyRoot) &&
-        exitStatus === RootErrored
+        exitStatus === RootErrored // 渲染阶段发生错误
       ) {
+        // 确定哪些 lanes 需要同步重试，用于错误恢复
         const lanesThatJustErrored = lanes;
         const errorRetryLanes = getLanesToRetrySynchronouslyOnError(
           root,
@@ -1251,6 +1298,7 @@ export function performWorkOnRoot(
             finalizeRender(lanes, renderEndTime);
           }
           lanes = errorRetryLanes;
+          // 执行恢复错误
           exitStatus = recoverFromConcurrentError(
             root,
             lanesThatJustErrored,
@@ -1259,6 +1307,7 @@ export function performWorkOnRoot(
           renderWasConcurrent = false;
           // Need to check the exit status again.
           if (exitStatus !== RootErrored) {
+            // 恢复成功，重新检查
             // The root did not error this time. Restart the exit algorithm
             // from the beginning.
             // TODO: Refactor the exit algorithm to be less confusing. Maybe
@@ -1269,12 +1318,15 @@ export function performWorkOnRoot(
             continue;
           } else {
             // The root errored yet again. Proceed to commit the tree.
+            // 恢复失败，记录时间并继续提交
             if (enableProfilerTimer && enableComponentPerformanceTrack) {
               renderEndTime = now();
             }
           }
         }
       }
+
+      // 致命错误，标记挂起
       if (exitStatus === RootFatalErrored) {
         if (enableProfilerTimer && enableComponentPerformanceTrack) {
           setCurrentTrackFromLanes(lanes);
@@ -1296,6 +1348,7 @@ export function performWorkOnRoot(
 
       // We now have a consistent tree. The next step is either to commit it,
       // or, if something suspended, wait to commit it after a timeout.
+      // 完成渲染，进入提交阶段
       finishConcurrentRender(
         root,
         exitStatus,
@@ -1396,29 +1449,40 @@ export function queueRecoverableErrors(errors: Array<CapturedValue<mixed>>) {
   }
 }
 
+/**
+ * 完成并发渲染的后处理，根据退出状态决定下一步
+ * @param {*} root 
+ * @param {*} exitStatus 
+ * @param {*} finishedWork 
+ * @param {*} lanes 
+ * @param {*} renderEndTime 
+ * @returns 
+ */
 function finishConcurrentRender(
-  root: FiberRoot,
-  exitStatus: RootExitStatus,
-  finishedWork: Fiber,
-  lanes: Lanes,
-  renderEndTime: number, // Profiling-only
+  root: FiberRoot, // 	Fiber 根节点
+  exitStatus: RootExitStatus, // 渲染退出状态
+  finishedWork: Fiber, // 	完成的 workInProgress
+  lanes: Lanes, // 处理的 lanes
+  renderEndTime: number, // Profiling-only 渲染结束时间（profiling）
 ) {
   // TODO: The fact that most of these branches are identical suggests that some
   // of the exit statuses are not best modeled as exit statuses and should be
   // tracked orthogonally.
   switch (exitStatus) {
-    case RootInProgress:
-    case RootFatalErrored: {
+    case RootInProgress: // 0
+    case RootFatalErrored: { // 1
       throw new Error('Root did not complete. This is a bug in React.');
     }
-    case RootSuspendedWithDelay: {
+    case RootSuspendedWithDelay: { // 4
+      // 如果有延迟挂起 且不是 transition/retry，提交占位符
       if (!includesOnlyTransitions(lanes) && !includesOnlyRetries(lanes)) {
         // Commit the placeholder.
         break;
       }
     }
     // Fallthrough
-    case RootSuspendedAtTheShell: {
+    case RootSuspendedAtTheShell: { // 6
+      // 这是 transition，无限期等待数据，不提交任何内容
       // This is a transition, so we should exit without committing a
       // placeholder and without scheduling a timeout. Delay indefinitely
       // until we receive more data.
@@ -1442,7 +1506,8 @@ function finishConcurrentRender(
       );
       return;
     }
-    case RootErrored: {
+    case RootErrored: { // 2
+      // 忽略可恢复错误，继续提交
       // This render errored. Ignore any recoverable errors because we weren't actually
       // able to recover. Instead, whatever the final errors were is the ones we log.
       // This ensures that we only log the actual client side error if it's just a plain
@@ -1450,8 +1515,8 @@ function finishConcurrentRender(
       workInProgressRootRecoverableErrors = null;
       break;
     }
-    case RootSuspended:
-    case RootCompleted: {
+    case RootSuspended: // 3
+    case RootCompleted: { //5
       break;
     }
     default: {
@@ -1460,6 +1525,7 @@ function finishConcurrentRender(
   }
 
   if (shouldForceFlushFallbacksInDEV()) {
+    // act 环境下，立即提交
     // We're inside an `act` scope. Commit immediately.
     completeRoot(
       root,
@@ -1479,6 +1545,7 @@ function finishConcurrentRender(
       renderEndTime,
     );
   } else {
+    // 延迟提交？  
     if (
       includesOnlyRetries(lanes) &&
       (alwaysThrottleRetries || exitStatus === RootSuspended)
@@ -1535,6 +1602,9 @@ function finishConcurrentRender(
         return;
       }
     }
+
+    // 正常提交 
+    // 准备提交，处理 View Transitions 等
     completeRootWhenReady(
       root,
       finishedWork,
@@ -1554,6 +1624,24 @@ function finishConcurrentRender(
   }
 }
 
+/**
+ * 准备提交，检查是否需要暂停等待资源加载，然后决定是否立即提交
+ * @param {*} root 
+ * @param {*} finishedWork 
+ * @param {*} recoverableErrors 
+ * @param {*} transitions 
+ * @param {*} didIncludeRenderPhaseUpdate 
+ * @param {*} lanes 
+ * @param {*} spawnedLane 
+ * @param {*} updatedLanes 
+ * @param {*} suspendedRetryLanes 
+ * @param {*} didSkipSuspendedSiblings 
+ * @param {*} exitStatus 
+ * @param {*} suspendedCommitReason 
+ * @param {*} completedRenderStartTime 
+ * @param {*} completedRenderEndTime 
+ * @returns 
+ */
 function completeRootWhenReady(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -1570,23 +1658,32 @@ function completeRootWhenReady(
   completedRenderStartTime: number, // Profiling-only
   completedRenderEndTime: number, // Profiling-only
 ) {
+  // 重置 timeoutHandle  
   root.timeoutHandle = noTimeout;
 
   // TODO: Combine retry throttling with Suspensey commits. Right now they run
   // one after the other.
+  
+  // 同时满足 Visibility（8192） 和 MaySuspendCommit（16777216）
   const BothVisibilityAndMaySuspendCommit = Visibility | MaySuspendCommit;
-  const subtreeFlags = finishedWork.subtreeFlags;
+  const subtreeFlags = finishedWork.subtreeFlags; // 获取子树的 flags
+  // 有 View Transition
   const isViewTransitionEligible =
     enableViewTransition && includesOnlyViewTransitionEligibleLanes(lanes); // TODO: Use a subtreeFlag to optimize.
+  // 有手势动画
   const isGestureTransition = enableGestureTransition && isGestureRender(lanes);
+  // 有 Suspensey 资源
   const maySuspendCommit =
     subtreeFlags & ShouldSuspendCommit ||
     (subtreeFlags & BothVisibilityAndMaySuspendCommit) ===
       BothVisibilityAndMaySuspendCommit;
   let suspendedState: null | SuspendedState = null;
+
+  // 暂停提交流程
   if (isViewTransitionEligible || maySuspendCommit || isGestureTransition) {
     // Before committing, ask the renderer whether the host tree is ready.
     // If it's not, we'll wait until it notifies us.
+    // 开始暂停提交
     suspendedState = startSuspendingCommit();
     // This will walk the completed fiber tree and attach listeners to all
     // the suspensey resources. The renderer is responsible for accumulating
@@ -1594,7 +1691,9 @@ function completeRootWhenReady(
     // transaction, so it track state in its own module scope.
     // This will also track any newly added or appearing ViewTransition
     // components for the purposes of forming pairs.
+    // 收集 Suspensey 资源
     accumulateSuspenseyCommit(finishedWork, lanes, suspendedState);
+    // 等待 View Transition
     if (
       isViewTransitionEligible ||
       (isGestureTransition &&
@@ -1618,10 +1717,14 @@ function completeRootWhenReady(
     // At the end, ask the renderer if it's ready to commit, or if we should
     // suspend. If it's not ready, it will return a callback to subscribe to
     // a ready event.
+    // 询问渲染器
+    // - 返回 null = 准备好
+    // - 返回函数 = 未准备好，需要等待
     const schedulePendingCommit = waitForCommitToBeReady(
       suspendedState,
       timeoutOffset,
     );
+    // 如果未准备好
     if (schedulePendingCommit !== null) {
       // NOTE: waitForCommitToBeReady returns a subscribe function so that we
       // only allocate a function if the commit isn't ready yet. The other
@@ -1660,6 +1763,7 @@ function completeRootWhenReady(
   }
 
   // Otherwise, commit immediately.;
+  // 准备好 → completeRoot 
   completeRoot(
     root,
     finishedWork,
@@ -1925,7 +2029,10 @@ export function flushSyncFromReconciler<R>(fn: (() => R) | void): R | void {
 // If called outside of a render or commit will flush all sync work on all roots
 // Returns whether the the call was during a render or not
 export function flushSyncWork(): boolean {
+  // 防止在渲染或提交过程中再次触发刷新
   if ((executionContext & (RenderContext | CommitContext)) === NoContext) {
+    // 全局刷新：刷新所有根节点的同步工作
+    // 同步执行：确保所有待处理的同步更新立即完成
     flushSyncWorkOnAllRoots();
     return false;
   }
@@ -2278,58 +2385,43 @@ function resetSuspendedWorkLoopOnUnwind(fiber: Fiber) {
   resetChildReconcilerOnUnwind();
 }
 
+/**
+ * handleThrow 是 React Suspense 机制的核心错误处理函数，
+ * 负责处理渲染过程中抛出的各种异常（包括普通错误和 Suspense 挂起）。
+ * @param {*} root 
+ * @param {*} thrownValue 
+ * @returns 
+ */
 function handleThrow(root: FiberRoot, thrownValue: any): void {
-  // A component threw an exception. Usually this is because it suspended, but
-  // it also includes regular program errors.
-  //
-  // We're either going to unwind the stack to show a Suspense or error
-  // boundary, or we're going to replay the component again. Like after a
-  // promise resolves.
-  //
-  // Until we decide whether we're going to unwind or replay, we should preserve
-  // the current state of the work loop without resetting anything.
-  //
-  // If we do decide to unwind the stack, module-level variables will be reset
-  // in resetSuspendedWorkLoopOnUnwind.
-
-  // These should be reset immediately because they're only supposed to be set
-  // when React is executing user code.
+ 
   resetHooksAfterThrow();
   if (__DEV__) {
     resetCurrentFiber();
   }
 
+  // Suspense 挂起异常
+  // 场景：使用 use 钩子或 startTransition 时的挂起
   if (
     thrownValue === SuspenseException ||
     thrownValue === SuspenseActionException
   ) {
-    // This is a special type of exception used for Suspense. For historical
-    // reasons, the rest of the Suspense implementation expects the thrown value
-    // to be a thenable, because before `use` existed that was the (unstable)
-    // API for suspending. This implementation detail can change later, once we
-    // deprecate the old API in favor of `use`.
+   
     thrownValue = getSuspendedThenable();
-    // TODO: Suspending the work loop during the render phase is
-    // currently not compatible with sibling prerendering. We will add
-    // this optimization back in a later step.
-    // Don't suspend work loop, except to check if the data has
-    // immediately resolved (i.e. in a microtask). Otherwise, trigger the
-    // nearest Suspense fallback.
-    workInProgressSuspendedReason = SuspendedOnImmediate;
+    workInProgressSuspendedReason = SuspendedOnImmediate; // 3
+
+    // Commit 阶段挂起
+    // 组件实例化过程中的挂起（如加载外部资源）
   } else if (thrownValue === SuspenseyCommitException) {
     thrownValue = getSuspendedThenable();
     workInProgressSuspendedReason = SuspendedOnInstance;
+
+    // 选择性水合异常
   } else if (thrownValue === SelectiveHydrationException) {
-    // An update flowed into a dehydrated boundary. Before we can apply the
-    // update, we need to finish hydrating. Interrupt the work-in-progress
-    // render so we can restart at the hydration lane.
-    //
-    // The ideal implementation would be able to switch contexts without
-    // unwinding the current stack.
-    //
-    // We could name this something more general but as of now it's the only
-    // case where we think this should happen.
+   
     workInProgressSuspendedReason = SuspendedOnHydration;
+
+
+    // 普通错误或 Legacy Suspense
   } else {
     // This is a regular error.
     const isWakeable =
@@ -2338,15 +2430,13 @@ function handleThrow(root: FiberRoot, thrownValue: any): void {
       typeof thrownValue.then === 'function';
 
     workInProgressSuspendedReason = isWakeable
-      ? // A wakeable object was thrown by a legacy Suspense implementation.
-        // This has slightly different behavior than suspending with `use`.
-        SuspendedOnDeprecatedThrowPromise
-      : // This is a regular error. If something earlier in the component already
-        // suspended, we must clear the thenable state to unblock the work loop.
-        SuspendedOnError;
+      ? 
+        SuspendedOnDeprecatedThrowPromise // Legacy throw Promise 模式
+      : 
+        SuspendedOnError; // 普通错误
   }
 
-  workInProgressThrownValue = thrownValue;
+  workInProgressThrownValue = thrownValue; // 保存抛出的值
 
   const erroredWork = workInProgress;
   if (erroredWork === null) {
@@ -2748,8 +2838,11 @@ function renderRootSync(
 
 // The work loop is an extremely hot path. Tell Closure not to inline it.
 /** @noinline */
+// 同步模式	不中断，一次性完成所有工作
+// 一旦开始就必须完成，不能被打断
 function workLoopSync() {
   // Perform work without checking if we need to yield between fiber.
+  // 简单的 while 循环，不检查中断条件
   while (workInProgress !== null) {
     performUnitOfWork(workInProgress);
   }
@@ -3032,6 +3125,7 @@ function renderRootConcurrent(root: FiberRoot, lanes: Lanes): RootExitStatus {
 }
 
 /** @noinline */
+// 并发模式（时间切片）	基于时间阈值中断 时间切片模式
 function workLoopConcurrent(nonIdle: boolean) {
   // We yield every other "frame" when rendering Transition or Retries. Those are blocking
   // revealing new content. The purpose of this yield is not to avoid the overhead of yielding,
@@ -3040,6 +3134,8 @@ function workLoopConcurrent(nonIdle: boolean) {
   // is to reduce the framerate of animations to 30 frames per second.
   // For Idle work we yield every 5ms to keep animations going smooth.
   if (workInProgress !== null) {
+    // 非空闲任务：每 25ms 中断一次（约 40fps）
+    // 空闲任务：每 5ms 中断一次（保证动画流畅）
     const yieldAfter = now() + (nonIdle ? 25 : 5);
     do {
       // $FlowFixMe[incompatible-call] flow doesn't know that now() is side-effect free
@@ -3049,14 +3145,21 @@ function workLoopConcurrent(nonIdle: boolean) {
 }
 
 /** @noinline */
+// 并发模式（调度器）	由 Scheduler 控制中断
 function workLoopConcurrentByScheduler() {
   // Perform work until Scheduler asks us to yield
+  // 由 Scheduler 的 shouldYield() 控制中断时机
   while (workInProgress !== null && !shouldYield()) {
     // $FlowFixMe[incompatible-call] flow doesn't know that shouldYield() is side-effect free
     performUnitOfWork(workInProgress);
   }
 }
 
+/**
+ * performUnitOfWork 是 React Fiber 工作循环的核心执行单元，负责处理单个 Fiber 节点的渲染工作，
+ * 包括向下遍历（beginWork）和向上完成（completeUnitOfWork）。
+ * @param {*} unitOfWork 
+ */
 function performUnitOfWork(unitOfWork: Fiber): void {
   // The current, flushed, state of this fiber is the alternate. Ideally
   // nothing should rely on this, but relying on it here means that we don't
@@ -3088,6 +3191,7 @@ function performUnitOfWork(unitOfWork: Fiber): void {
         entangledRenderLanes,
       );
     } else {
+      // 调用 beginWork 处理当前节点
       next = beginWork(current, unitOfWork, entangledRenderLanes);
     }
   }
@@ -3095,9 +3199,10 @@ function performUnitOfWork(unitOfWork: Fiber): void {
   unitOfWork.memoizedProps = unitOfWork.pendingProps;
   if (next === null) {
     // If this doesn't spawn new work, complete the current work.
+    // 向上完成
     completeUnitOfWork(unitOfWork);
   } else {
-    workInProgress = next;
+    workInProgress = next; // 向下遍历
   }
 }
 
@@ -3344,11 +3449,18 @@ function panicOnRootError(root: FiberRoot, error: mixed) {
   workInProgress = null;
 }
 
+/**
+ * completeUnitOfWork 是 React Fiber 向上遍历的核心函数，
+ * 负责完成当前节点的处理，并向上遍历到父节点，同时处理兄弟节点。
+ * @param {*} unitOfWork 
+ * @returns 
+ */
 function completeUnitOfWork(unitOfWork: Fiber): void {
   // Attempt to complete the current unit of work, then move to the next
   // sibling. If there are no more siblings, return to the parent fiber.
   let completedWork: Fiber = unitOfWork;
   do {
+    // 检查是否有 Incomplete 标记
     if ((completedWork.flags & Incomplete) !== NoFlags) {
       // This fiber did not complete, because one of its children did not
       // complete. Switch to unwinding the stack instead of completing it.
@@ -3378,18 +3490,22 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
         entangledRenderLanes,
       );
     } else {
+      // 调用 completeWork 完成当前节点
       next = completeWork(current, completedWork, entangledRenderLanes);
     }
     if (enableProfilerTimer && (completedWork.mode & ProfileMode) !== NoMode) {
       // Update render duration assuming we didn't error.
       stopProfilerTimerIfRunningAndRecordIncompleteDuration(completedWork);
     }
+
+    // 处理返回的新工作
     if (next !== null) {
       // Completing this fiber spawned new work. Work on that next.
       workInProgress = next;
       return;
     }
 
+    // 处理兄弟节点
     const siblingFiber = completedWork.sibling;
     if (siblingFiber !== null) {
       // If there is more work to do in this returnFiber, do that next.
@@ -3398,12 +3514,14 @@ function completeUnitOfWork(unitOfWork: Fiber): void {
     }
     // Otherwise, return to the parent
     // $FlowFixMe[incompatible-type] we bail out when we get a null
+    // 回到父节点
     completedWork = returnFiber;
     // Update the next thing we're working on in case something throws.
     workInProgress = completedWork;
   } while (completedWork !== null);
 
   // We've reached the root.
+  // 到达根节点
   if (workInProgressRootExitStatus === RootInProgress) {
     workInProgressRootExitStatus = RootCompleted;
   }
@@ -3487,6 +3605,26 @@ function unwindUnitOfWork(unitOfWork: Fiber, skipSiblings: boolean): void {
   workInProgress = null;
 }
 
+/**
+ * completeRoot 是 React 渲染阶段的收尾函数，
+ * 负责完成渲染工作、处理被动副作用、记录性能数据，并最终调用 commitRoot 提交更改到 DOM。
+ * @param {*} root 
+ * @param {*} finishedWork 
+ * @param {*} lanes 
+ * @param {*} recoverableErrors 
+ * @param {*} transitions 
+ * @param {*} didIncludeRenderPhaseUpdate 
+ * @param {*} spawnedLane 
+ * @param {*} updatedLanes 
+ * @param {*} suspendedRetryLanes 
+ * @param {*} didSkipSuspendedSiblings 
+ * @param {*} exitStatus 
+ * @param {*} suspendedState 
+ * @param {*} suspendedCommitReason 
+ * @param {*} completedRenderStartTime 
+ * @param {*} completedRenderEndTime 
+ * @returns 
+ */
 function completeRoot(
   root: FiberRoot,
   finishedWork: null | Fiber,
@@ -3513,61 +3651,65 @@ function completeRoot(
     // no more pending effects.
     // TODO: Might be better if `flushPassiveEffects` did not automatically
     // flush synchronous work at the end, to avoid factoring hazards like this.
+    // 循环刷新被动副作用，直到没有待处理的效果。
+    // 这是因为 flushPassiveEffects 可能会触发新的同步更新，进而产生新的被动副作用。
+    // 被动副作用是 React 异步执行的副作用，在 DOM 更新完成后异步调度执行，不会阻塞浏览器渲染
     flushPendingEffects();
   } while (pendingEffectsStatus !== NO_PENDING_EFFECTS);
   flushRenderPhaseStrictModeWarningsInDEV();
 
+  // 确保在正确的执行上下文中调用，防止嵌套调用
   if ((executionContext & (RenderContext | CommitContext)) !== NoContext) {
     throw new Error('Should not already be working.');
   }
 
-  if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    // Log the previous render phase once we commit. I.e. we weren't interrupted.
-    setCurrentTrackFromLanes(lanes);
-    if (isGestureRender(lanes)) {
-      // Clamp the render start time in case if something else on this lane was committed
-      // (such as this same tree before).
-      if (completedRenderStartTime < gestureClampTime) {
-        completedRenderStartTime = gestureClampTime;
-      }
-      if (completedRenderEndTime < gestureClampTime) {
-        completedRenderEndTime = gestureClampTime;
-      }
-    }
-    if (exitStatus === RootErrored) {
-      logErroredRenderPhase(
-        completedRenderStartTime,
-        completedRenderEndTime,
-        lanes,
-        workInProgressUpdateTask,
-      );
-    } else if (recoverableErrors !== null) {
-      const hydrationFailed =
-        finishedWork !== null &&
-        finishedWork.alternate !== null &&
-        (finishedWork.alternate.memoizedState: RootState).isDehydrated &&
-        (finishedWork.flags & ForceClientRender) !== NoFlags;
-      logRecoveredRenderPhase(
-        completedRenderStartTime,
-        completedRenderEndTime,
-        lanes,
-        recoverableErrors,
-        hydrationFailed,
-        workInProgressUpdateTask,
-      );
-    } else {
-      logRenderPhase(
-        completedRenderStartTime,
-        completedRenderEndTime,
-        lanes,
-        workInProgressUpdateTask,
-      );
-    }
-  }
+  // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+  //   // Log the previous render phase once we commit. I.e. we weren't interrupted.
+  //   setCurrentTrackFromLanes(lanes);
+  //   if (isGestureRender(lanes)) {
+  //     // Clamp the render start time in case if something else on this lane was committed
+  //     // (such as this same tree before).
+  //     if (completedRenderStartTime < gestureClampTime) {
+  //       completedRenderStartTime = gestureClampTime;
+  //     }
+  //     if (completedRenderEndTime < gestureClampTime) {
+  //       completedRenderEndTime = gestureClampTime;
+  //     }
+  //   }
+  //   if (exitStatus === RootErrored) {
+  //     logErroredRenderPhase(
+  //       completedRenderStartTime,
+  //       completedRenderEndTime,
+  //       lanes,
+  //       workInProgressUpdateTask,
+  //     );
+  //   } else if (recoverableErrors !== null) {
+  //     const hydrationFailed =
+  //       finishedWork !== null &&
+  //       finishedWork.alternate !== null &&
+  //       (finishedWork.alternate.memoizedState: RootState).isDehydrated &&
+  //       (finishedWork.flags & ForceClientRender) !== NoFlags;
+  //     logRecoveredRenderPhase(
+  //       completedRenderStartTime,
+  //       completedRenderEndTime,
+  //       lanes,
+  //       recoverableErrors,
+  //       hydrationFailed,
+  //       workInProgressUpdateTask,
+  //     );
+  //   } else {
+  //     logRenderPhase(
+  //       completedRenderStartTime,
+  //       completedRenderEndTime,
+  //       lanes,
+  //       workInProgressUpdateTask,
+  //     );
+  //   }
+  // }
 
-  if (enableSchedulingProfiler) {
-    markCommitStarted(lanes);
-  }
+  // if (enableSchedulingProfiler) {
+  //   markCommitStarted(lanes);
+  // }
 
   if (finishedWork === null) {
     if (enableSchedulingProfiler) {
@@ -3598,6 +3740,7 @@ function completeRoot(
     );
   }
 
+  // 清理渲染阶段的全局状态，为下一次渲染做准备
   if (root === workInProgressRoot) {
     // We can reset these now that they are finished.
     workInProgressRoot = null;
@@ -3615,6 +3758,7 @@ function completeRoot(
   // because workInProgressX might have changed between
   // the previous render and commit if we throttle the commit
   // with setTimeout
+  // 将渲染结果保存到全局变量，供后续的 commit 阶段使用。
   pendingFinishedWork = finishedWork;
   pendingEffectsRoot = root;
   pendingEffectsLanes = lanes;
@@ -3628,6 +3772,7 @@ function completeRoot(
     pendingSuspendedViewTransitionReason = null;
   }
 
+  // 支持手势驱动的渲染，当手势未完成时延迟提交，确保动画流畅。
   if (enableGestureTransition && isGestureRender(lanes)) {
     const committingGesture = root.pendingGestures;
     if (committingGesture !== null && !committingGesture.committing) {
@@ -3688,6 +3833,7 @@ function completeRoot(
   }
 
   // If we're not starting a gesture we now actually commit the root.
+  // 进入 commit 阶段，将更改提交到 DOM
   commitRoot(
     root,
     finishedWork,
@@ -3701,6 +3847,19 @@ function completeRoot(
   );
 }
 
+/**
+ * commitRoot 是 React Commit 阶段的入口函数，
+ * 负责将渲染阶段构建的 Fiber 树提交到 DOM，包括 DOM 突变、布局计算和被动副作用调度。
+ * @param {*} root 
+ * @param {*} finishedWork 
+ * @param {*} lanes 
+ * @param {*} spawnedLane 
+ * @param {*} updatedLanes 
+ * @param {*} suspendedRetryLanes 
+ * @param {*} suspendedState 
+ * @param {*} suspendedCommitReason 
+ * @param {*} completedRenderEndTime 
+ */
 function commitRoot(
   root: FiberRoot,
   finishedWork: Fiber,
@@ -3714,6 +3873,7 @@ function commitRoot(
 ) {
   // Check which lanes no longer have any work scheduled on them, and mark
   // those as finished.
+  // 计算还有哪些 lanes 仍有未完成的工作
   let remainingLanes = mergeLanes(finishedWork.lanes, finishedWork.childLanes);
 
   pendingEffectsRemainingLanes = remainingLanes;
@@ -3735,6 +3895,7 @@ function commitRoot(
     remainingLanes &= ~GestureLane;
   }
 
+  // 更新根节点状态，标记当前渲染批次完成
   markRootFinished(
     root,
     lanes,
@@ -3805,22 +3966,22 @@ function commitRoot(
     root.callbackPriority = NoLane;
   }
 
-  if (enableProfilerTimer) {
-    // Mark the current commit time to be shared by all Profilers in this
-    // batch. This enables them to be grouped later.
-    resetCommitErrors();
-    recordCommitTime();
-    if (enableComponentPerformanceTrack) {
-      if (suspendedCommitReason !== null) {
-        logSuspendedCommitPhase(
-          completedRenderEndTime,
-          commitStartTime,
-          suspendedCommitReason,
-          workInProgressUpdateTask,
-        );
-      }
-    }
-  }
+  // if (enableProfilerTimer) {
+  //   // Mark the current commit time to be shared by all Profilers in this
+  //   // batch. This enables them to be grouped later.
+  //   resetCommitErrors();
+  //   recordCommitTime();
+  //   if (enableComponentPerformanceTrack) {
+  //     if (suspendedCommitReason !== null) {
+  //       logSuspendedCommitPhase(
+  //         completedRenderEndTime,
+  //         commitStartTime,
+  //         suspendedCommitReason,
+  //         workInProgressUpdateTask,
+  //       );
+  //     }
+  //   }
+  // }
 
   resetShouldStartViewTransition();
 
@@ -3846,10 +4007,13 @@ function commitRoot(
     setCurrentUpdatePriority(DiscreteEventPriority);
     const prevExecutionContext = executionContext;
     executionContext |= CommitContext;
+
+    // Before Mutation 阶段
     try {
       // The first phase a "before mutation" phase. We use this phase to read the
       // state of the host tree right before we mutate it. This is where
       // getSnapshotBeforeUpdate is called.
+      // 在 DOM 突变前执行 getSnapshotBeforeUpdate
       commitBeforeMutationEffects(root, finishedWork, lanes);
     } finally {
       // Reset the priority to the previous non-sync value.
@@ -3871,18 +4035,24 @@ function commitRoot(
   }
 
   pendingEffectsStatus = PENDING_MUTATION_PHASE;
+
+  // Mutation 阶段
   if (enableViewTransition && shouldStartViewTransition) {
-    if (enableProfilerTimer && enableComponentPerformanceTrack) {
-      startAnimating(lanes);
-    }
+    // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+    //   startAnimating(lanes);
+    // }
+    // 执行 DOM 更新，支持 View Transition 动画
     pendingViewTransition = startViewTransition(
       suspendedState,
       root.containerInfo,
       pendingTransitionTypes,
+      // DOM 增删改
       flushMutationEffects,
+      // 布局计算、ref 挂载、useLayoutEffect
       flushLayoutEffects,
       flushAfterMutationEffects,
       flushSpawnedWork,
+      // useEffect（异步）
       flushPassiveEffects,
       reportViewTransitionError,
       enableProfilerTimer ? suspendedViewTransition : (null: any),
@@ -3985,28 +4155,36 @@ function flushAfterMutationEffects(): void {
   pendingEffectsStatus = PENDING_SPAWNED_WORK;
 }
 
+/**
+ * flushMutationEffects 是 React Commit 阶段 Mutation 子阶段的入口函数，
+ * 负责执行所有 DOM 突变操作（插入、删除、更新节点）。
+ * @returns 
+ */
 function flushMutationEffects(): void {
+  // 检查是否需要执行 Mutation 阶段
   if (pendingEffectsStatus !== PENDING_MUTATION_PHASE) {
     return;
   }
-  pendingEffectsStatus = NO_PENDING_EFFECTS;
+  pendingEffectsStatus = NO_PENDING_EFFECTS; // 0 重置 
 
-  const root = pendingEffectsRoot;
-  const finishedWork = pendingFinishedWork;
-  const lanes = pendingEffectsLanes;
+  const root = pendingEffectsRoot; // 获取当前待处理的根节点
+  const finishedWork = pendingFinishedWork; // 取当前待处理的 Fiber 节点
+  const lanes = pendingEffectsLanes; // 获取当前待处理的 lanes
   const subtreeMutationHasEffects =
     (finishedWork.subtreeFlags & MutationMask) !== NoFlags;
   const rootMutationHasEffect = (finishedWork.flags & MutationMask) !== NoFlags;
 
   if (subtreeMutationHasEffects || rootMutationHasEffect) {
+    // 执行上下文设置
     const prevTransition = ReactSharedInternals.T;
     ReactSharedInternals.T = null;
     const previousPriority = getCurrentUpdatePriority();
-    setCurrentUpdatePriority(DiscreteEventPriority);
+    setCurrentUpdatePriority(DiscreteEventPriority); // 2 设置为离散事件优先级 同步执行
     const prevExecutionContext = executionContext;
-    executionContext |= CommitContext;
+    executionContext |= CommitContext; // 4 设置为提交上下文
     try {
       // The next phase is the mutation phase, where we mutate the host tree.
+      // 执行 DOM 突变
       commitMutationEffects(root, finishedWork, lanes);
 
       if (enableCreateEventHandleAPI) {
@@ -4027,8 +4205,11 @@ function flushMutationEffects(): void {
   // the mutation phase, so that the previous tree is still current during
   // componentWillUnmount, but before the layout phase, so that the finished
   // work is current during componentDidMount/Update.
+  // 切换 Fiber 树
+  // 将 workInProgress 树切换为 current 树，这是双缓冲机制的关键步骤
+  // 在 componentDidMount/Update 执行时，root.current 已经是新树
   root.current = finishedWork;
-  pendingEffectsStatus = PENDING_LAYOUT_PHASE;
+  pendingEffectsStatus = PENDING_LAYOUT_PHASE; // 2 切换到 Layout 阶段
 }
 
 function flushLayoutEffects(): void {
@@ -4630,18 +4811,30 @@ function releaseRootPooledCache(root: FiberRoot, remainingLanes: Lanes) {
 
 let didWarnAboutInterruptedViewTransitions = false;
 
+/**
+ * 记录延迟提交原因和执行刷新副作用
+ * @returns 
+ */
 export function flushPendingEffectsDelayed(): boolean {
-  if (pendingDelayedCommitReason === IMMEDIATE_COMMIT) {
-    pendingDelayedCommitReason = DELAYED_PASSIVE_COMMIT;
+  if (pendingDelayedCommitReason === IMMEDIATE_COMMIT) { // 0
+    // 记录提交被延迟的原因，因为被动副作用被中断
+    pendingDelayedCommitReason = DELAYED_PASSIVE_COMMIT; // 2
   }
+  // 刷新副作用
   return flushPendingEffects();
 }
 
+/**
+ * flushPendingEffects 是 React 副作用刷新的统一入口函数，
+ * 负责按顺序刷新各种类型的副作用，包括手势、DOM 突变、布局和被动副作用
+ * @returns 
+ */
 export function flushPendingEffects(): boolean {
   // Returns whether passive effects were flushed.
   if (enableViewTransition && pendingViewTransition !== null) {
     // If we forced a flush before the View Transition full started then we skip it.
     // This ensures that we're not running a partial animation.
+    // 如果在 View Transition 准备阶段调用了 flushSync，则中断正在进行的过渡动画，确保同步更新的语义。
     stopViewTransition(pendingViewTransition);
     if (__DEV__) {
       if (!didWarnAboutInterruptedViewTransitions) {
@@ -4657,15 +4850,22 @@ export function flushPendingEffects(): boolean {
     pendingViewTransition = null;
     pendingDelayedCommitReason = ABORTED_VIEW_TRANSITION_COMMIT;
   }
+  // 按优先级顺序处理各种副作用，确保正确的执行顺序
   flushGestureMutations();
   flushGestureAnimations();
   flushMutationEffects();
   flushLayoutEffects();
   // Skip flushAfterMutation if we're forcing this early.
   flushSpawnedWork();
+
+  // 刷新被动副作用
   return flushPassiveEffects();
 }
 
+/**
+ * flushPassiveEffects 是 React 被动副作用刷新的入口函数，负责调度和执行 useEffect 等被动副作用。
+ * @returns 
+ */
 function flushPassiveEffects(): boolean {
   if (pendingEffectsStatus !== PENDING_PASSIVE_PHASE) {
     return false;
@@ -4683,16 +4883,21 @@ function flushPassiveEffects(): boolean {
   const remainingLanes = pendingEffectsRemainingLanes;
   pendingEffectsRemainingLanes = NoLanes;
 
+  // 将渲染优先级转换为事件优先级
   const renderPriority = lanesToEventPriority(pendingEffectsLanes);
+  // 使用较低的优先级，避免阻塞高优先级任务
   const priority = lowerEventPriority(DefaultEventPriority, renderPriority);
   const prevTransition = ReactSharedInternals.T;
   const previousPriority = getCurrentUpdatePriority();
 
+  // 执行上下文设置
   try {
     setCurrentUpdatePriority(priority);
     ReactSharedInternals.T = null;
+    // 用实际的副作用刷新实现
     return flushPassiveEffectsImpl();
   } finally {
+    // 清理工作
     setCurrentUpdatePriority(previousPriority);
     ReactSharedInternals.T = prevTransition;
 
@@ -4740,21 +4945,21 @@ function flushPassiveEffectsImpl() {
   }
 
   let passiveEffectStartTime = 0;
-  if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    resetCommitErrors();
-    passiveEffectStartTime = now();
-    if (pendingDelayedCommitReason === ANIMATION_STARTED_COMMIT) {
-      // The animation was started, so we've been animating since that happened.
-      logAnimatingPhase(commitEndTime, passiveEffectStartTime, animatingTask);
-    } else {
-      logPaintYieldPhase(
-        commitEndTime,
-        passiveEffectStartTime,
-        pendingDelayedCommitReason === DELAYED_PASSIVE_COMMIT,
-        workInProgressUpdateTask,
-      );
-    }
-  }
+  // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+  //   resetCommitErrors();
+  //   passiveEffectStartTime = now();
+  //   if (pendingDelayedCommitReason === ANIMATION_STARTED_COMMIT) {
+  //     // The animation was started, so we've been animating since that happened.
+  //     logAnimatingPhase(commitEndTime, passiveEffectStartTime, animatingTask);
+  //   } else {
+  //     logPaintYieldPhase(
+  //       commitEndTime,
+  //       passiveEffectStartTime,
+  //       pendingDelayedCommitReason === DELAYED_PASSIVE_COMMIT,
+  //       workInProgressUpdateTask,
+  //     );
+  //   }
+  // }
 
   if (enableSchedulingProfiler) {
     markPassiveEffectsStarted(lanes);
@@ -4776,22 +4981,22 @@ function flushPassiveEffectsImpl() {
     markPassiveEffectsStopped();
   }
 
-  if (__DEV__) {
-    commitDoubleInvokeEffectsInDEV(root, true);
-  }
+  // if (__DEV__) {
+  //   commitDoubleInvokeEffectsInDEV(root, true);
+  // }
 
   executionContext = prevExecutionContext;
 
-  if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    const passiveEffectsEndTime = now();
-    logPassiveCommitPhase(
-      passiveEffectStartTime,
-      passiveEffectsEndTime,
-      commitErrors,
-      workInProgressUpdateTask,
-    );
-    finalizeRender(lanes, passiveEffectsEndTime);
-  }
+  // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+  //   const passiveEffectsEndTime = now();
+  //   logPassiveCommitPhase(
+  //     passiveEffectStartTime,
+  //     passiveEffectsEndTime,
+  //     commitErrors,
+  //     workInProgressUpdateTask,
+  //   );
+  //   finalizeRender(lanes, passiveEffectsEndTime);
+  // }
 
   flushSyncWorkOnAllRoots();
 
@@ -4816,22 +5021,22 @@ function flushPassiveEffectsImpl() {
     }
   }
 
-  if (__DEV__) {
-    // If additional passive effects were scheduled, increment a counter. If this
-    // exceeds the limit, we'll fire a warning.
-    if (didScheduleUpdateDuringPassiveEffects) {
-      if (root === rootWithPassiveNestedUpdates) {
-        nestedPassiveUpdateCount++;
-      } else {
-        nestedPassiveUpdateCount = 0;
-        rootWithPassiveNestedUpdates = root;
-      }
-    } else {
-      nestedPassiveUpdateCount = 0;
-    }
-    isFlushingPassiveEffects = false;
-    didScheduleUpdateDuringPassiveEffects = false;
-  }
+  // if (__DEV__) {
+  //   // If additional passive effects were scheduled, increment a counter. If this
+  //   // exceeds the limit, we'll fire a warning.
+  //   if (didScheduleUpdateDuringPassiveEffects) {
+  //     if (root === rootWithPassiveNestedUpdates) {
+  //       nestedPassiveUpdateCount++;
+  //     } else {
+  //       nestedPassiveUpdateCount = 0;
+  //       rootWithPassiveNestedUpdates = root;
+  //     }
+  //   } else {
+  //     nestedPassiveUpdateCount = 0;
+  //   }
+  //   isFlushingPassiveEffects = false;
+  //   didScheduleUpdateDuringPassiveEffects = false;
+  // }
 
   if (enableYieldingBeforePassive) {
     // Next, we reschedule any remaining work in a new task since it's a new
@@ -4843,11 +5048,11 @@ function flushPassiveEffectsImpl() {
 
   // TODO: Move to commitPassiveMountEffects
   onPostCommitRootDevTools(root);
-  if (enableProfilerTimer && enableProfilerCommitHooks) {
-    const stateNode = root.current.stateNode;
-    stateNode.effectDuration = 0;
-    stateNode.passiveEffectDuration = 0;
-  }
+  // if (enableProfilerTimer && enableProfilerCommitHooks) {
+  //   const stateNode = root.current.stateNode;
+  //   stateNode.effectDuration = 0;
+  //   stateNode.passiveEffectDuration = 0;
+  // }
 
   return true;
 }
@@ -4991,6 +5196,13 @@ export function attachPingListener(
   }
 }
 
+/**
+ * pingSuspendedRoot 是 React Suspense 机制中的核心恢复函数，
+ * 负责在挂起的 Promise resolve 时通知 React 重新调度渲染
+ * @param {*} root 
+ * @param {*} wakeable 
+ * @param {*} pingedLanes 
+ */
 function pingSuspendedRoot(
   root: FiberRoot,
   wakeable: Wakeable,

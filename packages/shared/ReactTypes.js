@@ -362,15 +362,16 @@ export type ActivityProps = {
 };
 
 export type SuspenseProps = {
-  children?: ReactNodeList,
-  fallback?: ReactNodeList,
+  children?: ReactNodeList, // 需要渲染的子元素
+  fallback?: ReactNodeList, // 挂起时显示的占位内容
 
   // TODO: Add "unstable_" prefix?
+  // 挂起回调函数
   suspenseCallback?: (Set<Wakeable> | null) => mixed,
 
   unstable_avoidThisFallback?: boolean,
-  defer?: boolean,
-  name?: string,
+  defer?: boolean, // 是否延迟渲染
+  name?: string, // 组件的名称
 };
 
 export type SuspenseListRevealOrder =

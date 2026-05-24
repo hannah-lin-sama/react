@@ -655,7 +655,13 @@ export function commitHostRemoveChildFromContainer(
     captureCommitPhaseError(deletedFiber, nearestMountedAncestor, error);
   }
 }
-
+/**
+ * 从父 DOM 节点中移除子节点
+ * @param {*} deletedFiber  要删除的节点Fiber
+ * @param {*} nearestMountedAncestor  最近的挂载祖先节点
+ * @param {*} parentInstance  父节点实例
+ * @param {*} hostInstance  子节点实例
+ * */
 export function commitHostRemoveChild(
   deletedFiber: Fiber,
   nearestMountedAncestor: Fiber,
@@ -671,10 +677,15 @@ export function commitHostRemoveChild(
         hostInstance,
       );
     } else {
+      // 调用底层 DOM API 从父节点中移除子节点
+      // parentNode.removeChild(childNode)
       removeChild(parentInstance, hostInstance);
     }
+    // Mutation 追踪
     trackHostMutation();
   } catch (error) {
+    // DOM 操作错误不会影响 React 主流程
+    // 将错误传递给最近的错误边界处理
     captureCommitPhaseError(deletedFiber, nearestMountedAncestor, error);
   }
 }

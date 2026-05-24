@@ -429,22 +429,33 @@ type ChildReconciler = (
 // a compiler or we can do it manually. Helpers that don't need this branching
 // live outside of this function.
 function createChildReconciler(
-  shouldTrackSideEffects: boolean,
+  shouldTrackSideEffects: boolean, // 是否需要跟踪副作用，首次false，更新true
 ): ChildReconciler {
+
   function deleteChild(returnFiber: Fiber, childToDelete: Fiber): void {
     if (!shouldTrackSideEffects) {
       // Noop.
       return;
     }
+    // 父节点的删除队列
     const deletions = returnFiber.deletions;
     if (deletions === null) {
+      // 初始化删除队列
       returnFiber.deletions = [childToDelete];
-      returnFiber.flags |= ChildDeletion;
+      returnFiber.flags |= ChildDeletion; // 16 标记为删除
     } else {
+      // 加入删除队列
       deletions.push(childToDelete);
     }
   }
 
+
+  /**
+   * deleteRemainingChildren 是 React Diff 算法的辅助函数，负责批量删除指定 Fiber 之后的所有兄弟节点。
+   * @param {*} returnFiber 
+   * @param {*} currentFirstChild 
+   * @returns 
+   */
   function deleteRemainingChildren(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -459,6 +470,7 @@ function createChildReconciler(
     let childToDelete = currentFirstChild;
     while (childToDelete !== null) {
       deleteChild(returnFiber, childToDelete);
+      // 下一个兄弟节点
       childToDelete = childToDelete.sibling;
     }
     return null;
@@ -499,49 +511,89 @@ function createChildReconciler(
     return existingChildren;
   }
 
+  /**
+   * useFiber 是 React Fiber 复用机制的核心函数，负责基于现有 Fiber 节点创建新的 workInProgress Fiber。
+   * @param {*} fiber 
+   * @param {*} pendingProps 
+   * @returns 
+   */
   function useFiber(fiber: Fiber, pendingProps: mixed): Fiber {
     // We currently set sibling to null and index to 0 here because it is easy
     // to forget to do before returning it. E.g. for the single child case.
+    // 基于现有 Fiber 创建新的 workInProgress Fiber，复用部分属性。
     const clone = createWorkInProgress(fiber, pendingProps);
-    clone.index = 0;
-    clone.sibling = null;
+    clone.index = 0; // 重置子节点索引，确保正确的位置计算
+    clone.sibling = null; // 重置兄弟指针，避免残留的引用导致问题。
     return clone;
   }
 
+  /**
+   * React 的 Diff 算法采用右移优化策略
+   * 旧列表: [A, B, C, D]
+   * 新列表: [B, A, D, C]
+   * 
+   * lastPlacedIndex = 0
+   * 处理 B: oldIndex=1 >= 0 → lastPlacedIndex=1, 不需要移动
+   * 处理 A: oldIndex=0 < 1  → 需要移动, lastPlacedIndex=1
+   * 处理 D: oldIndex=3 >= 1 → lastPlacedIndex=3, 不需要移动
+   * 处理 C: oldIndex=2 < 3  → 需要移动, lastPlacedIndex=3
+   */
+
+  /**
+   * placeChild 是 React Diff 算法的核心函数，负责计算子节点在协调过程中的位置变化，决定是否需要移动或插入节点。
+   * @param {*} newFiber 
+   * @param {*} lastPlacedIndex 
+   * @param {*} newIndex 
+   * @returns 
+   */
   function placeChild(
     newFiber: Fiber,
     lastPlacedIndex: number,
     newIndex: number,
   ): number {
+    // 记录节点在新子节点列表中的位置
     newFiber.index = newIndex;
+
+    // 副作用追踪检查
+    // 水合阶段不需要追踪副作用，但需要标记为 Forked 用于 useId 算法。
     if (!shouldTrackSideEffects) {
       // During hydration, the useId algorithm needs to know which fibers are
       // part of a list of children (arrays, iterators).
-      newFiber.flags |= Forked;
+      newFiber.flags |= Forked; // 1048576
       return lastPlacedIndex;
     }
-    const current = newFiber.alternate;
+    const current = newFiber.alternate; // alternate 指向旧 Fiber 树中对应的节点。
     if (current !== null) {
       const oldIndex = current.index;
       if (oldIndex < lastPlacedIndex) {
         // This is a move.
-        newFiber.flags |= Placement | PlacementDEV;
+        // 需要移动
+        newFiber.flags |= Placement | PlacementDEV; // 2 ｜ 134217728
         return lastPlacedIndex;
       } else {
+        // 保持原位
         // This item can stay in place.
         return oldIndex;
       }
     } else {
       // This is an insertion.
-      newFiber.flags |= Placement | PlacementDEV;
+      // 新插入
+      newFiber.flags |= Placement | PlacementDEV; // 2 ｜ 134217728
       return lastPlacedIndex;
     }
   }
 
+  /**
+   * placeSingleChild 是 React 单节点协调的简化版函数，专门处理只有一个子节点的情况。
+   * @param {*} newFiber 
+   * @returns 
+   */
   function placeSingleChild(newFiber: Fiber): Fiber {
     // This is simpler for the single child case. We only need to do a
     // placement for inserting new children.
+    // shouldTrackSideEffects 副作用追踪检查
     if (shouldTrackSideEffects && newFiber.alternate === null) {
+      // 标记该节点需要在 commit 阶段插入到 DOM
       newFiber.flags |= Placement | PlacementDEV;
     }
     return newFiber;
@@ -633,19 +685,29 @@ function createChildReconciler(
     return created;
   }
 
+  /**
+   * updatePortal 是 React 子节点协调中处理 Portal 更新的函数，负责复用或创建 Portal Fiber 节点。
+   * @param {*} returnFiber 
+   * @param {*} current 
+   * @param {*} portal 
+   * @param {*} lanes 
+   * @returns 
+   */
   function updatePortal(
     returnFiber: Fiber,
     current: Fiber | null,
     portal: ReactPortal,
     lanes: Lanes,
   ): Fiber {
+
     if (
-      current === null ||
-      current.tag !== HostPortal ||
-      current.stateNode.containerInfo !== portal.containerInfo ||
-      current.stateNode.implementation !== portal.implementation
+      current === null || // 旧节点不存在
+      current.tag !== HostPortal || // 旧节点不是 Portal 节点
+      current.stateNode.containerInfo !== portal.containerInfo || // 旧节点的容器信息与新 Portal 不一致
+      current.stateNode.implementation !== portal.implementation // 旧节点的实现与新 Portal 不一致
     ) {
       // Insert
+      // 创建新的 Portal 节点
       const created = createFiberFromPortal(portal, returnFiber.mode, lanes);
       created.return = returnFiber;
       if (__DEV__) {
@@ -654,7 +716,10 @@ function createChildReconciler(
       return created;
     } else {
       // Update
+      // 复用旧 Portal 节点
       const existing = useFiber(current, portal.children || []);
+
+      // 支持乐观 key，允许在某些场景下临时使用特殊 key
       if (enableOptimisticKey) {
         // If the old key was optimistic we need to now save the real one.
         existing.key = portal.key;
@@ -836,6 +901,14 @@ function createChildReconciler(
     return null;
   }
 
+  /**
+   * updateSlot 是 React 子节点协调的核心函数，负责根据 newChild 的类型进行分发处理，并在 key 匹配时更新对应的 Fiber 节点。
+   * @param {*} returnFiber 
+   * @param {*} oldFiber 
+   * @param {*} newChild 
+   * @param {*} lanes 
+   * @returns 
+   */
   function updateSlot(
     returnFiber: Fiber,
     oldFiber: Fiber | null,
@@ -845,6 +918,7 @@ function createChildReconciler(
     // Update the fiber if the keys match, otherwise return null.
     const key = oldFiber !== null ? oldFiber.key : null;
 
+    // 文本节点处理
     if (
       (typeof newChild === 'string' && newChild !== '') ||
       typeof newChild === 'number' ||
@@ -865,6 +939,7 @@ function createChildReconciler(
       );
     }
 
+    // 对象类型处理
     if (typeof newChild === 'object' && newChild !== null) {
       switch (newChild.$$typeof) {
         case REACT_ELEMENT_TYPE: {
@@ -888,6 +963,7 @@ function createChildReconciler(
             return null;
           }
         }
+        // 专门处理 Portal 类型的子节点协调
         case REACT_PORTAL_TYPE: {
           if (
             // If the old child was an optimisticKey, then we'd normally consider that a match,
@@ -896,6 +972,7 @@ function createChildReconciler(
             // takes precedence over assuming the identity of an optimistic slot.
             newChild.key === key
           ) {
+            // 只有 key 完全匹配时才复用现有 Portal Fiber
             return updatePortal(returnFiber, oldFiber, newChild, lanes);
           } else {
             return null;
@@ -915,6 +992,7 @@ function createChildReconciler(
         }
       }
 
+      // 数组/迭代器处理
       if (
         isArray(newChild) ||
         getIteratorFn(newChild) ||
@@ -940,6 +1018,7 @@ function createChildReconciler(
       // Usable node types
       //
       // Unwrap the inner value and recursively call this function again.
+      // 异步可迭代对象处理
       if (typeof newChild.then === 'function') {
         const thenable: Thenable<any> = (newChild: any);
         const prevDebugInfo = pushDebugInfo((thenable: any)._debugInfo);
@@ -953,6 +1032,7 @@ function createChildReconciler(
         return updated;
       }
 
+      // 上下文处理
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
         const context: ReactContext<mixed> = (newChild: any);
         return updateSlot(
@@ -978,6 +1058,15 @@ function createChildReconciler(
     return null;
   }
 
+  /**
+   * updateFromMap 是 React Diff 算法慢路径的核心函数，负责从预构建的 Map 中查找匹配的 Fiber 节点并进行更新。
+   * @param {*} existingChildren 
+   * @param {*} returnFiber 
+   * @param {*} newIdx 
+   * @param {*} newChild 
+   * @param {*} lanes 
+   * @returns 
+   */
   function updateFromMap(
     existingChildren: Map<string | number | ReactOptimisticKey, Fiber>,
     returnFiber: Fiber,
@@ -985,6 +1074,8 @@ function createChildReconciler(
     newChild: any,
     lanes: Lanes,
   ): Fiber | null {
+
+    // 1. 文本节点处理
     if (
       (typeof newChild === 'string' && newChild !== '') ||
       typeof newChild === 'number' ||
@@ -1002,8 +1093,10 @@ function createChildReconciler(
       );
     }
 
+    // 
     if (typeof newChild === 'object' && newChild !== null) {
       switch (newChild.$$typeof) {
+        // 2.1. 元素节点处理
         case REACT_ELEMENT_TYPE: {
           const matchedFiber =
             existingChildren.get(
@@ -1023,6 +1116,7 @@ function createChildReconciler(
           currentDebugInfo = prevDebugInfo;
           return updated;
         }
+        // 2.1. Portal 处理
         case REACT_PORTAL_TYPE: {
           const matchedFiber =
             existingChildren.get(
@@ -1032,8 +1126,10 @@ function createChildReconciler(
               // If the existing child was an optimistic key, we may still match on the index.
               existingChildren.get(-newIdx - 1)) ||
             null;
+            
           return updatePortal(returnFiber, matchedFiber, newChild, lanes);
         }
+        // 2.3  Lazy 组件处理
         case REACT_LAZY_TYPE: {
           const prevDebugInfo = pushDebugInfo(newChild._debugInfo);
           const resolvedChild = resolveLazy((newChild: any));
@@ -1049,6 +1145,7 @@ function createChildReconciler(
         }
       }
 
+      // 数组、迭代器、异步可迭代对象处理
       if (
         isArray(newChild) ||
         getIteratorFn(newChild) ||
@@ -1071,6 +1168,7 @@ function createChildReconciler(
       // Usable node types
       //
       // Unwrap the inner value and recursively call this function again.
+      //  Promise 处理
       if (typeof newChild.then === 'function') {
         const thenable: Thenable<any> = (newChild: any);
         const prevDebugInfo = pushDebugInfo((thenable: any)._debugInfo);
@@ -1085,6 +1183,7 @@ function createChildReconciler(
         return updated;
       }
 
+      // 上下文节点处理
       if (newChild.$$typeof === REACT_CONTEXT_TYPE) {
         const context: ReactContext<mixed> = (newChild: any);
         return updateFromMap(
@@ -1169,6 +1268,14 @@ function createChildReconciler(
     return knownKeys;
   }
 
+  /**
+   * reconcileChildrenArray 是 React Diff 算法的核心实现，负责协调两个子节点数组（旧 Fiber 链表和新 children 数组），计算出需要执行的增删改操作。
+   * @param {*} returnFiber 
+   * @param {*} currentFirstChild 
+   * @param {*} newChildren 
+   * @param {*} lanes 
+   * @returns 
+   */
   function reconcileChildrenArray(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -1203,19 +1310,28 @@ function createChildReconciler(
     let lastPlacedIndex = 0;
     let newIdx = 0;
     let nextOldFiber = null;
+
+    // Phase 1：快速路径（顺序匹配）
+    // 遍历新 子数组，协调每个子节点
     for (; oldFiber !== null && newIdx < newChildren.length; newIdx++) {
+
+      // 1. 索引异常处理
+      // 旧节点索引大于新节点索引，说明旧节点已被删除
       if (oldFiber.index > newIdx) {
         nextOldFiber = oldFiber;
         oldFiber = null;
       } else {
+        // 旧节点索引小于等于新节点索引，说明旧节点需要更新
         nextOldFiber = oldFiber.sibling;
       }
+      // 2、更新旧节点或创建新节点
       const newFiber = updateSlot(
         returnFiber,
-        oldFiber,
-        newChildren[newIdx],
+        oldFiber, // 旧节点
+        newChildren[newIdx], // 新节点
         lanes,
       );
+      // updateSlot 返回 null 表示无法直接复用，进入慢路径
       if (newFiber === null) {
         // TODO: This breaks on empty slots like null children. That's
         // unfortunate because it triggers the slow path all the time. We need
@@ -1240,9 +1356,11 @@ function createChildReconciler(
         if (oldFiber && newFiber.alternate === null) {
           // We matched the slot, but we didn't reuse the existing fiber, so we
           // need to delete the existing child.
+          // 删除未复用的旧节点
           deleteChild(returnFiber, oldFiber);
         }
       }
+      // 使用右移优化算法计算节点位置
       lastPlacedIndex = placeChild(newFiber, lastPlacedIndex, newIdx);
       if (previousNewFiber === null) {
         // TODO: Move out of the loop. This only happens for the first run.
@@ -1258,6 +1376,9 @@ function createChildReconciler(
       oldFiber = nextOldFiber;
     }
 
+    // Phase 2：处理边界情况
+
+    // 新节点遍历完毕，删除剩余旧节点
     if (newIdx === newChildren.length) {
       // We've reached the end of the new children. We can delete the rest.
       deleteRemainingChildren(returnFiber, oldFiber);
@@ -1268,6 +1389,7 @@ function createChildReconciler(
       return resultingFirstChild;
     }
 
+    // 旧链表遍历完，创建所有新节点
     if (oldFiber === null) {
       // If we don't have any more existing children we can choose a fast path
       // since the rest will all be insertions.
@@ -1300,9 +1422,12 @@ function createChildReconciler(
       return resultingFirstChild;
     }
 
+    // Phase 3：Map 模式（key 查找）
+
     // Add all children to a key map for quick lookups.
     const existingChildren = mapRemainingChildren(oldFiber);
 
+    // Map 模式（key 查找）
     // Keep scanning and use the map to restore deleted items as moves.
     for (; newIdx < newChildren.length; newIdx++) {
       const newFiber = updateFromMap(
@@ -1800,6 +1925,14 @@ function createChildReconciler(
     }
   }
 
+  /**
+   * reconcileSinglePortal 是 React 子节点协调的核心函数，负责处理单个 Portal 节点的协调逻辑。
+   * @param {*} returnFiber 
+   * @param {*} currentFirstChild 
+   * @param {*} portal 
+   * @param {*} lanes 
+   * @returns 
+   */
   function reconcileSinglePortal(
     returnFiber: Fiber,
     currentFirstChild: Fiber | null,
@@ -1813,14 +1946,20 @@ function createChildReconciler(
       // the first item in the list.
       if (
         child.key === key ||
+
+        // 支持乐观 key，允许在某些场景下临时使用特殊 key
         (enableOptimisticKey && child.key === REACT_OPTIMISTIC_KEY)
       ) {
+
+        // 只有所有条件都满足才复用现有 Fiber
         if (
-          child.tag === HostPortal &&
-          child.stateNode.containerInfo === portal.containerInfo &&
-          child.stateNode.implementation === portal.implementation
+          child.tag === HostPortal && // 类型为 Portal
+          child.stateNode.containerInfo === portal.containerInfo && // 目标容器相同
+          child.stateNode.implementation === portal.implementation // 实现相同
         ) {
+          // 找到匹配后，删除所有后续兄弟节点，避免冗余节点
           deleteRemainingChildren(returnFiber, child.sibling);
+          // 复用现有 Fiber，更新 props
           const existing = useFiber(child, portal.children || []);
           if (enableOptimisticKey) {
             // If the old key was optimistic we need to now save the real one.
@@ -2101,8 +2240,10 @@ function createChildReconciler(
   return reconcileChildFibers;
 }
 
+// 更新
 export const reconcileChildFibers: ChildReconciler =
   createChildReconciler(true);
+// 首次挂载
 export const mountChildFibers: ChildReconciler = createChildReconciler(false);
 
 export function resetChildReconcilerOnUnwind(): void {

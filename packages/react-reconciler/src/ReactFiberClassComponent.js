@@ -163,11 +163,20 @@ function applyDerivedStateFromProps(
 }
 
 const classComponentUpdater = {
+  /**
+   * React 类组件 setState 的核心实现，负责将状态更新加入队列并触发调度
+   * @param {*} inst 类组件实例（this）
+   * @param {*} payload 更新的状态值或函数
+   * @param {*} callback 更新完成后的回调函数
+   */
   // $FlowFixMe[missing-local-annot]
   enqueueSetState(inst: any, payload: any, callback) {
+    // 获取 Fiber 节点
     const fiber = getInstance(inst);
+    // 获取更新优先级
     const lane = requestUpdateLane(fiber);
 
+    // 创建 Update 对象
     const update = createUpdate(lane);
     update.payload = payload;
     if (callback !== undefined && callback !== null) {
@@ -177,11 +186,12 @@ const classComponentUpdater = {
       update.callback = callback;
     }
 
+    // 加入更新队列
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
-      startUpdateTimerByLane(lane, 'this.setState()', fiber);
-      scheduleUpdateOnFiber(root, fiber, lane);
-      entangleTransitions(root, fiber, lane);
+      startUpdateTimerByLane(lane, 'this.setState()', fiber);// 启动更新计时器，用于性能追踪
+      scheduleUpdateOnFiber(root, fiber, lane); // 调度 Fiber 的更新
+      entangleTransitions(root, fiber, lane); // 关联过渡状态
     }
 
     if (enableSchedulingProfiler) {

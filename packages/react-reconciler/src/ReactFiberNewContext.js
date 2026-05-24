@@ -573,20 +573,29 @@ export function readContextDuringReconciliation<T>(
   return readContextForConsumer(consumer, context);
 }
 
+/**
+ * 
+ * @param {*} consumer 消费者 fiber（读取 context 的组件）
+ * @param {*} context  Context 对象
+ * @returns 
+ */
 function readContextForConsumer<T>(
   consumer: Fiber | null,
   context: ReactContext<T>,
 ): T {
+  // 获取 context 值 
   const value = isPrimaryRenderer
     ? context._currentValue
     : context._currentValue2;
 
+  // 创建 contextItem 
   const contextItem = {
     context: ((context: any): ReactContext<mixed>),
     memoizedValue: value,
     next: null,
   };
 
+  // 链接到依赖链  
   if (lastContextDependency === null) {
     if (consumer === null) {
       throw new Error(
@@ -598,7 +607,9 @@ function readContextForConsumer<T>(
     }
 
     // This is the first dependency for this component. Create a new list.
+      
     lastContextDependency = contextItem;
+    // 首个依赖，创建依赖链
     consumer.dependencies = __DEV__
       ? {
           lanes: NoLanes,
@@ -609,9 +620,10 @@ function readContextForConsumer<T>(
           lanes: NoLanes,
           firstContext: contextItem,
         };
-    consumer.flags |= NeedsPropagation;
+    consumer.flags |= NeedsPropagation; // 524288 标记需要传播 context 变化
   } else {
     // Append a new context item.
+    // 追加到链尾  
     lastContextDependency = lastContextDependency.next = contextItem;
   }
   return value;

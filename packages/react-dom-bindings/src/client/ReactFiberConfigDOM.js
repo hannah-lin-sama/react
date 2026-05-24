@@ -1198,6 +1198,11 @@ function dispatchAfterDetachedBlur(target: HTMLElement): void {
   }
 }
 
+/**
+ * 从父 DOM 节点中移除子节点
+ * @param {*} parentInstance 
+ * @param {*} child 
+ */
 export function removeChild(
   parentInstance: Instance,
   child: Instance | TextInstance | SuspenseInstance | ActivityInstance,
@@ -2150,6 +2155,24 @@ function waitForImageToLoad(this: HTMLImageElement, resolve: () => void) {
   this.addEventListener('error', resolve);
 }
 
+/**
+ * startViewTransition 是 React View Transition API 的核心实现，
+ * 负责将浏览器原生的 View Transition 与 React 的 commit 阶段集成，实现平滑的页面过渡动画。
+ * @param {*} suspendedState 
+ * @param {*} rootContainer 
+ * @param {*} transitionTypes 
+ * @param {*} mutationCallback 
+ * @param {*} layoutCallback 
+ * @param {*} afterMutationCallback 
+ * @param {*} spawnedWorkCallback 
+ * @param {*} passiveCallback 
+ * @param {*} errorCallback 
+ * @param {any} 
+ * @param {*} blockedCallback 
+ * @param {any} 
+ * @param {*} finishedAnimation 
+ * @returns 
+ */
 export function startViewTransition(
   suspendedState: null | SuspendedState,
   rootContainer: Container,
@@ -2163,12 +2186,16 @@ export function startViewTransition(
   blockedCallback: string => void, // Profiling-only
   finishedAnimation: () => void, // Profiling-only
 ): null | RunningViewTransition {
+
   const ownerDocument: Document =
     rootContainer.nodeType === DOCUMENT_NODE
       ? (rootContainer: any)
+      // 只读属性 ownerDocument 会返回该节点所属的顶层 document 对象
       : rootContainer.ownerDocument;
   try {
     // $FlowFixMe[prop-missing]
+    // 调用浏览器原生的 View Transition API，创建过渡动画
+    // https://drafts.csswg.org/css-view-transitions-2/#additions-to-document-api
     const transition = ownerDocument.startViewTransition({
       update() {
         // Note: We read the existence of a pending navigation before we apply the
@@ -2179,6 +2206,7 @@ export function startViewTransition(
           ownerWindow.navigation && ownerWindow.navigation.transition;
         // $FlowFixMe[prop-missing]
         const previousFontLoadingStatus = ownerDocument.fonts.status;
+        // 执行 mutation
         mutationCallback();
         const blockingPromises: Array<Promise<any>> = [];
         if (previousFontLoadingStatus === 'loaded') {
@@ -2246,6 +2274,7 @@ export function startViewTransition(
             : blockingReady;
           return allReady.then(afterMutationCallback, afterMutationCallback);
         }
+        // 直接执行 layoutCallback
         layoutCallback();
         if (pendingNavigation) {
           return pendingNavigation.finished.then(
@@ -2263,6 +2292,7 @@ export function startViewTransition(
 
     const viewTransitionAnimations: Array<Animation> = [];
 
+    // 优化动画关键帧
     const readyCallback = () => {
       const documentElement: Element = (ownerDocument.documentElement: any);
       // Loop through all View Transition Animations.
@@ -2342,6 +2372,7 @@ export function startViewTransition(
       }
       spawnedWorkCallback();
     };
+    // 错误处理
     const handleError = (error: mixed) => {
       // $FlowFixMe[prop-missing]
       if (ownerDocument.__reactViewTransition === transition) {
@@ -2853,10 +2884,19 @@ export function startGestureTransition(
   }
 }
 
+/**
+ * 中止正在进行的 View Transition 动画，调用底层的 skipTransition() 方法
+ * @param {*} transition 
+ */
 export function stopViewTransition(transition: RunningViewTransition) {
   transition.skipTransition();
 }
 
+/**
+ * 给 View Transition 的完成事件添加监听器，无论过渡成功还是失败都会触发
+ * @param {*} transition  正在运行的 View Transition 对象
+ * @param {*} callback 
+ */
 export function addViewTransitionFinishedListener(
   transition: RunningViewTransition,
   callback: () => void,
@@ -3658,6 +3698,7 @@ export function deleteChildFromFragmentInstance(
 
 export function clearContainer(container: Container): void {
   const nodeType = container.nodeType;
+  // 如果容器是 Document 节点
   if (nodeType === DOCUMENT_NODE) {
     clearContainerSparingly(container);
   } else if (nodeType === ELEMENT_NODE) {
@@ -3668,12 +3709,17 @@ export function clearContainer(container: Container): void {
         clearContainerSparingly(container);
         return;
       default: {
-        container.textContent = '';
+        container.textContent = ''; // 清空容器内容
       }
     }
   }
 }
 
+/**
+ * 
+ * @param {*} container 
+ * @returns 
+ */
 function clearContainerSparingly(container: Node) {
   let node;
   let nextNode: ?Node = container.firstChild;
@@ -3688,11 +3734,13 @@ function clearContainerSparingly(container: Node) {
       case 'HEAD':
       case 'BODY': {
         const element: Element = (node: any);
+        // 递归清空子元素
         clearContainerSparingly(element);
         // If these singleton instances had previously been rendered with React they
         // may still hold on to references to the previous fiber tree. We detatch them
         // prospectively to reset them to a baseline starting state since we cannot create
         // new instances.
+        // 分离已删除的实例
         detachDeletedInstance(element);
         continue;
       }
@@ -3719,6 +3767,7 @@ function clearContainerSparingly(container: Node) {
         }
       }
     }
+    // 移除节点
     container.removeChild(node);
   }
   return;
@@ -4780,16 +4829,18 @@ type StylesheetState = {
   preload: null | HTMLLinkElement,
 };
 
+/** 内联样式标签属性 */
 type StyleTagProps = {
-  'data-href': string,
-  'data-precedence': string,
-  [string]: mixed,
+  'data-href': string, // // 样式文件路径
+  'data-precedence': string,  // 加载优先级
+  [string]: mixed, // 其他属性
 };
+/** 外部样式表属性 */
 type StylesheetProps = {
-  rel: 'stylesheet',
-  href: string,
-  'data-precedence': string,
-  [string]: mixed,
+  rel: 'stylesheet',  // 固定值
+  href: string, // 样式文件路径
+  'data-precedence': string,  // 加载优先级
+  [string]: mixed, // 其他属性
 };
 
 type ScriptProps = {
@@ -5083,7 +5134,13 @@ function preloadModule(href: string, options?: ?PreloadModuleImplOptions) {
     }
   }
 }
-
+/**
+ * 预初始化样式表资源，用于提前加载 CSS
+ * @param {*} href 样式表 URL
+ * @param {*} precedence 优先级（默认 'default'）
+ * @param {*} options 额外选项
+ * @returns 
+ */
 function preinitStyle(
   href: string,
   precedence: ?string,
@@ -5093,6 +5150,7 @@ function preinitStyle(
 
   const ownerDocument = getGlobalDocument();
   if (ownerDocument && href) {
+    // 获取 hoistableStyles      
     const styles = getResourcesFromRoot(ownerDocument).hoistableStyles;
 
     const key = getStyleKey(href);
@@ -5112,6 +5170,7 @@ function preinitStyle(
     };
 
     // Attempt to hydrate instance from DOM
+    // 如果 DOM 中已存在样式表，直接复用
     let instance: null | Instance = ownerDocument.querySelector(
       getStylesheetSelectorFromKey(key),
     );
@@ -5123,7 +5182,7 @@ function preinitStyle(
         ({
           rel: 'stylesheet',
           href,
-          'data-precedence': precedence,
+          'data-precedence': precedence, // 设置样式加载优先级
         }: StylesheetProps),
         options,
       );
@@ -5131,22 +5190,28 @@ function preinitStyle(
       if (preloadProps) {
         adoptPreloadPropsForStylesheet(stylesheetProps, preloadProps);
       }
+      // 创建新的link元素，用于加载样式表
       const link = (instance = ownerDocument.createElement('link'));
       markNodeAsHoistable(link);
+      // 设置link元素的属性
       setInitialProperties(link, 'link', stylesheetProps);
 
+      // 提供加载状态的 Promise 接口
       (link: any)._p = new Promise((resolve, reject) => {
         link.onload = resolve;
         link.onerror = reject;
       });
+      // 监听link元素的加载事件
       link.addEventListener('load', () => {
         state.loading |= Loaded;
       });
+      // 监听link元素的错误事件
       link.addEventListener('error', () => {
         state.loading |= Errored;
       });
 
-      state.loading |= Inserted;
+      state.loading |= Inserted; // 标记为已插入
+      // 插入样式表到 DOM
       insertStylesheet(instance, precedence, ownerDocument);
     }
 
@@ -5157,6 +5222,7 @@ function preinitStyle(
       count: 1,
       state,
     };
+    // 缓存样式表资源
     styles.set(key, resource);
     return;
   }
@@ -6420,10 +6486,16 @@ const SUSPENSEY_IMAGE_TIME_ESTIMATE = 500;
 
 let estimatedBytesWithinLimit: number = 0;
 
+/**
+ * 检查是否准备好提交，等待样式表和图片加载完成
+ * @param {*} state 
+ * @param {*} timeoutOffset 
+ */
 export function waitForCommitToBeReady(
   state: SuspendedState,
   timeoutOffset: number,
 ): null | ((() => void) => () => void) {
+  // 检查并插入样式表
   if (state.stylesheets && state.count === 0) {
     // We are not currently blocked but we have not inserted all stylesheets.
     // If this insertion happens and loads or errors synchronously then we can
@@ -6433,6 +6505,8 @@ export function waitForCommitToBeReady(
 
   // We need to check the count again because the inserted stylesheets may have led to new
   // tasks to wait on.
+  // 检查是否有未完成的资源
+  // 未准备好提交时，设置超时机制等待资源加载
   if (state.count > 0 || state.imgCount > 0) {
     return commit => {
       // We almost never want to show content before its styles have loaded. But
@@ -6441,39 +6515,55 @@ export function waitForCommitToBeReady(
       // extreme circumstances.
       // TODO: Figure out what the browser engines do during initial page load and
       // consider aligning our behavior with that.
+
+      // 设置定时器
       const stylesheetTimer = setTimeout(() => {
         if (state.stylesheets) {
+          // 插入剩余的样式表
           insertSuspendedStylesheets(state, state.stylesheets);
         }
+        // 检查是否有取消暂停函数
         if (state.unsuspend) {
           const unsuspend = state.unsuspend;
           state.unsuspend = null;
+          // 调用 unsuspend 取消暂停  
           unsuspend();
         }
       }, SUSPENSEY_STYLESHEET_TIMEOUT + timeoutOffset);
 
+      // 有图片 (imgBytes > 0)
       if (state.imgBytes > 0 && estimatedBytesWithinLimit === 0) {
         // Estimate how many bytes we can download in 500ms.
+        // 获取带宽
         const mbps = estimateBandwidth();
+        // 根据带宽估算可下载的字节数    
         estimatedBytesWithinLimit = mbps * 125 * SUSPENSEY_IMAGE_TIME_ESTIMATE;
       }
       // If we have more images to download than we expect to fit in the timeout, then
       // don't wait for images longer than 50ms. The 50ms lets us still do decoding and
       // hitting caches if it turns out that they're already in the HTTP cache.
+      // 图片字节 > 估算限制	50ms
+      // 图片字节 <= 估算限制	SUSPENSEY_IMAGE_TIMEOUT
       const imgTimeout =
         state.imgBytes > estimatedBytesWithinLimit
           ? 50
-          : SUSPENSEY_IMAGE_TIMEOUT;
+          : SUSPENSEY_IMAGE_TIMEOUT;// 800
+
+      // 设置定时器
       const imgTimer = setTimeout(() => {
         // We're no longer blocked on images. If CSS resolves after this we can commit.
-        state.waitingForImages = false;
+        state.waitingForImages = false; // 标记不再等待图片   
+
         if (state.count === 0) {
+          // 检查是否有未完成的样式表
           if (state.stylesheets) {
             insertSuspendedStylesheets(state, state.stylesheets);
           }
+          // 检查是否有取消暂停函数
           if (state.unsuspend) {
             const unsuspend = state.unsuspend;
             state.unsuspend = null;
+            // 调用 unsuspend 取消暂停  
             unsuspend();
           }
         }
@@ -6488,6 +6578,7 @@ export function waitForCommitToBeReady(
       };
     };
   }
+  // 准备好提交
   return null;
 }
 
@@ -6555,13 +6646,21 @@ let precedencesByRoot: Map<
   Map<string | typeof LAST_PRECEDENCE, Instance>,
 > = (null: any);
 
+/**
+ * 将挂起的样式表插入到 DOM 中
+ * @param {*} state 暂停状态对象
+ * @param {*} resources 样式表资源映射
+ * @returns 
+ */
 function insertSuspendedStylesheets(
   state: SuspendedState,
   resources: Map<StylesheetResource, HoistableRoot>,
 ): void {
   // We need to clear this out so we don't try to reinsert after the stylesheets have loaded
+  // 清空样式表引用
   state.stylesheets = null;
 
+  // 检查是否已取消
   if (state.unsuspend === null) {
     // The suspended commit was cancelled. We don't need to insert any stylesheets.
     return;
@@ -6569,34 +6668,52 @@ function insertSuspendedStylesheets(
 
   // Temporarily increment count. we don't want any synchronously loaded stylesheets to try to unsuspend
   // before we finish inserting all stylesheets.
+  // 临时增加计数
+  // 防止同步加载的样式表过早触发 unsuspend
   state.count++;
 
+  // 遍历插入样式表
   precedencesByRoot = new Map();
+  // 将每个样式表插入到正确的位置
   resources.forEach(insertStylesheetIntoRoot, state);
   precedencesByRoot = (null: any);
 
   // We can remove our temporary count and if we're still at zero we can unsuspend.
   // If we are in the synchronous phase before deciding if the commit should suspend and this
   // ends up hitting the unsuspend path it will just invoke the noop unsuspend.
+  // 检查是否可以取消暂停
   onUnsuspend.call(state);
 }
 
+/**
+ * 将单个样式表插入到 DOM 的正确位置（按优先级顺序）
+ * @param {*} this 
+ * @param {*} root 
+ * @param {*} resource 
+ * @param {*} map 
+ * @returns 
+ */
 function insertStylesheetIntoRoot(
   this: SuspendedState,
   root: HoistableRoot,
   resource: StylesheetResource,
   map: Map<StylesheetResource, HoistableRoot>,
 ) {
+  // 检查是否已插入
+  // 如果其他 root 已插入，跳过
   if (resource.state.loading & Inserted) {
     // This resource was inserted by another root committing. we don't need to insert it again
     return;
   }
 
+  // 获取/创建优先级映射
   let last;
   let precedences = precedencesByRoot.get(root);
+  // 首次插入时创建映射
   if (!precedences) {
     precedences = new Map();
     precedencesByRoot.set(root, precedences);
+    // 查询已有样式表
     const nodes = root.querySelectorAll(
       'link[data-precedence],style[data-precedence]',
     );
@@ -6623,11 +6740,14 @@ function insertStylesheetIntoRoot(
     last = precedences.get(LAST_PRECEDENCE);
   }
 
+  // 获取优先级
   // We only call this after we have constructed an instance so we assume it here
   const instance: HTMLLinkElement = (resource.instance: any);
   // We will always have a precedence for stylesheet instances
   const precedence: string = (instance.getAttribute('data-precedence'): any);
 
+  // 确定插入位置
+  // 找相同优先级的最后一个
   const prior = precedences.get(precedence) || last;
   if (prior === last) {
     precedences.set(LAST_PRECEDENCE, instance);
@@ -6636,18 +6756,23 @@ function insertStylesheetIntoRoot(
 
   this.count++;
   const onComplete = onUnsuspend.bind(this);
+  // 监听加载事件
   instance.addEventListener('load', onComplete);
   instance.addEventListener('error', onComplete);
 
+  // 插入 DOM
   if (prior) {
+    // 有前一个 → 插在其后
     (prior.parentNode: any).insertBefore(instance, prior.nextSibling);
   } else {
+    // 无前一个 → 插入到开头
     const parent =
       root.nodeType === DOCUMENT_NODE
         ? ((((root: any): Document).head: any): Element)
         : ((root: any): ShadowRoot);
     parent.insertBefore(instance, parent.firstChild);
   }
+  // 标记为已插入
   resource.state.loading |= Inserted;
 }
 

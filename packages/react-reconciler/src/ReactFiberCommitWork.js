@@ -341,21 +341,32 @@ function isHydratingParent(current: Fiber, finishedWork: Fiber): boolean {
   }
 }
 
+/**
+ * BeforeMutation 阶段的入口函数，准备环境并开始遍历
+ * @param {*} root 
+ * @param {*} firstChild 
+ * @param {*} committedLanes 
+ */
 export function commitBeforeMutationEffects(
   root: FiberRoot,
   firstChild: Fiber,
   committedLanes: Lanes,
 ): void {
+  // 准备提交环境
   focusedInstanceHandle = prepareForCommit(root.containerInfo);
   shouldFireAfterActiveInstanceBlur = false;
 
+  // 检查 View Transition 资格    
   const isViewTransitionEligible =
     enableViewTransition &&
     includesOnlyViewTransitionEligibleLanes(committedLanes);
 
+  // 设置遍历起点 
   nextEffect = firstChild;
+  // 开始遍历 
   commitBeforeMutationEffects_begin(isViewTransitionEligible);
 
+  // 清理环境 
   // We no longer need to track the active instance fiber
   focusedInstanceHandle = null;
   // We've found any matched pairs and can now reset.
@@ -454,17 +465,24 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
   }
 }
 
+/**
+ * 遍历处理 BeforeMutation 阶段需要处理的 fibers
+ * @param {*} isViewTransitionEligible 
+ * @returns 
+ */
 function commitBeforeMutationEffects_complete(
   isViewTransitionEligible: boolean,
 ) {
   while (nextEffect !== null) {
     const fiber = nextEffect;
+
+    // 处理当前 fiber
     commitBeforeMutationEffectsOnFiber(fiber, isViewTransitionEligible);
 
     const sibling = fiber.sibling;
     if (sibling !== null) {
       sibling.return = fiber.return;
-      nextEffect = sibling;
+      nextEffect = sibling; // 下一个兄弟节点
       return;
     }
 
@@ -472,6 +490,11 @@ function commitBeforeMutationEffects_complete(
   }
 }
 
+/**
+ * BeforeMutation 阶段
+ * @param {*} finishedWork 
+ * @param {*} isViewTransitionEligible 
+ */
 function commitBeforeMutationEffectsOnFiber(
   finishedWork: Fiber,
   isViewTransitionEligible: boolean,
@@ -479,6 +502,7 @@ function commitBeforeMutationEffectsOnFiber(
   const current = finishedWork.alternate;
   const flags = finishedWork.flags;
 
+  // 处理焦点 blur      
   if (enableCreateEventHandleAPI) {
     if (!shouldFireAfterActiveInstanceBlur && focusedInstanceHandle !== null) {
       // Check to see if the focused element was inside of a hidden (Suspense) subtree.
@@ -496,24 +520,32 @@ function commitBeforeMutationEffectsOnFiber(
     }
   }
 
+
   switch (finishedWork.tag) {
     case FunctionComponent:
     case ForwardRef:
     case SimpleMemoComponent: {
+      // 处理 useEffectEvent 更新  
+      // fiber标记了 Update 4
       if (!enableEffectEventMutationPhase && (flags & Update) !== NoFlags) {
         const updateQueue: FunctionComponentUpdateQueue | null =
           (finishedWork.updateQueue: any);
+
+          // 遍历 events 数组，将新的 callback 更新到 ref.impl
         const eventPayloads = updateQueue !== null ? updateQueue.events : null;
         if (eventPayloads !== null) {
           for (let ii = 0; ii < eventPayloads.length; ii++) {
             const {ref, nextImpl} = eventPayloads[ii];
-            ref.impl = nextImpl;
+            ref.impl = nextImpl; // 更新事件处理函数
           }
         }
       }
       break;
     }
+    
     case ClassComponent: {
+      // 处理 ClassComponent 快照
+      // 获取 getSnapshotBeforeUpdate 值  
       if ((flags & Snapshot) !== NoFlags) {
         if (current !== null) {
           commitClassSnapshot(finishedWork, current);
@@ -525,6 +557,7 @@ function commitBeforeMutationEffectsOnFiber(
       if ((flags & Snapshot) !== NoFlags) {
         if (supportsMutation) {
           const root = finishedWork.stateNode;
+          // 清空容器内容
           clearContainer(root.containerInfo);
         }
       }
@@ -588,6 +621,13 @@ function commitBeforeMutationEffectsDeletion(
   }
 }
 
+/**
+ * 执行 layout effect
+ * @param {*} finishedRoot 
+ * @param {*} current 
+ * @param {*} finishedWork 
+ * @param {*} committedLanes 
+ */
 function commitLayoutEffectOnFiber(
   finishedRoot: FiberRoot,
   current: Fiber | null,
@@ -616,19 +656,25 @@ function commitLayoutEffectOnFiber(
       break;
     }
     case ClassComponent: {
+      // 递归遍历子树
       recursivelyTraverseLayoutEffects(
         finishedRoot,
         finishedWork,
         committedLanes,
       );
+      // 执行 ClassComponent 的 layout 
       if (flags & Update) {
+        // componentDidMount (挂载) 
+        // componentDidUpdate (更新)       
         commitClassLayoutLifecycles(finishedWork, current);
       }
 
+      // 执行 ClassComponent 的 setState callback（回调）
       if (flags & Callback) {
         commitClassCallbacks(finishedWork);
       }
 
+      // 执行 ClassComponent 的 ref
       if (flags & Ref) {
         safelyAttachRef(finishedWork, finishedWork.return);
       }
@@ -1356,9 +1402,15 @@ function detachFiberAfterEffects(fiber: Fiber) {
 // deleted subtree.
 // TODO: Update these during the whole mutation phase, not just during
 // a deletion.
-let hostParent: Instance | Container | null = null;
-let hostParentIsContainer: boolean = false;
+let hostParent: Instance | Container | null = null; //宿主父节点的 DOM 实例或容器
+let hostParentIsContainer: boolean = false; // 标识 hostParent 是否为根容器
 
+/**
+ * React Mutation 阶段处理删除操作的入口函数，负责找到要删除节点的宿主父节点，并递归处理整个删除子树。
+ * @param {*} root 当前根节点
+ * @param {*} returnFiber 当前节点的父节点
+ * @param {*} deletedFiber 要删除的节点
+ */
 function commitDeletionEffects(
   root: FiberRoot,
   returnFiber: Fiber,
@@ -1389,10 +1441,11 @@ function commitDeletionEffects(
     findParent: while (parent !== null) {
       switch (parent.tag) {
         case HostSingleton: {
+          // React 渲染器配置项，标识当前渲染器是否支持 Singleton 类型的宿主组件
           if (supportsSingletons) {
             if (isSingletonScope(parent.type)) {
-              hostParent = parent.stateNode;
-              hostParentIsContainer = false;
+              hostParent = parent.stateNode; //  容器
+              hostParentIsContainer = false; // 不是根容器
               break findParent;
             }
             break;
@@ -1400,14 +1453,14 @@ function commitDeletionEffects(
           // Expected fallthrough when supportsSingletons is false
         }
         case HostComponent: {
-          hostParent = parent.stateNode;
-          hostParentIsContainer = false;
+          hostParent = parent.stateNode; //  容器/实例
+          hostParentIsContainer = false; // 不是根容器
           break findParent;
         }
         case HostRoot:
         case HostPortal: {
-          hostParent = parent.stateNode.containerInfo;
-          hostParentIsContainer = true;
+          hostParent = parent.stateNode.containerInfo; //  容器/实例
+          hostParentIsContainer = true; // 根容器
           break findParent;
         }
       }
@@ -1421,8 +1474,8 @@ function commitDeletionEffects(
     }
 
     commitDeletionEffectsOnFiber(root, returnFiber, deletedFiber);
-    hostParent = null;
-    hostParentIsContainer = false;
+    hostParent = null; // 重置宿主父节点
+    hostParentIsContainer = false; // 重置标识
   } else {
     // Detach refs and call componentWillUnmount() on the whole subtree.
     commitDeletionEffectsOnFiber(root, returnFiber, deletedFiber);
@@ -1448,6 +1501,12 @@ function commitDeletionEffects(
   detachFiberMutation(deletedFiber);
 }
 
+/**
+ * 责遍历父节点的所有子节点，并对每个子节点执行删除效果处理
+ * @param {*} finishedRoot 
+ * @param {*} nearestMountedAncestor 
+ * @param {*} parent 
+ */
 function recursivelyTraverseDeletionEffects(
   finishedRoot: FiberRoot,
   nearestMountedAncestor: Fiber,
@@ -1457,16 +1516,23 @@ function recursivelyTraverseDeletionEffects(
   let child = parent.child;
   while (child !== null) {
     commitDeletionEffectsOnFiber(finishedRoot, nearestMountedAncestor, child);
-    child = child.sibling;
+    child = child.sibling; // 下一个兄弟 fiber
   }
 }
 
+/**
+ *  React 删除操作的核心处理函数，负责根据 Fiber 类型执行不同的删除逻辑
+ * @param {*} finishedRoot  当前根节点
+ * @param {*} nearestMountedAncestor  最近的挂载祖先节点
+ * @param {*} deletedFiber  要删除的节点Fiber
+ */
 function commitDeletionEffectsOnFiber(
   finishedRoot: FiberRoot,
   nearestMountedAncestor: Fiber,
   deletedFiber: Fiber,
 ) {
   // TODO: Delete this Hook once new DevTools ships everywhere. No longer needed.
+  // 触发 unmount 回调
   onCommitUnmount(deletedFiber);
 
   const prevEffectStart = pushComponentEffectStart();
@@ -1478,6 +1544,7 @@ function commitDeletionEffectsOnFiber(
   // into their subtree. There are simpler cases in the inner switch
   // that don't modify the stack.
   switch (deletedFiber.tag) {
+    // 资源型组件
     case HostHoistable: {
       if (supportsResources) {
         if (!offscreenSubtreeWasHidden) {
@@ -1497,6 +1564,7 @@ function commitDeletionEffectsOnFiber(
       }
       // Fall through
     }
+    // 单例组件
     case HostSingleton: {
       if (supportsSingletons) {
         if (!offscreenSubtreeWasHidden) {
@@ -1529,6 +1597,7 @@ function commitDeletionEffectsOnFiber(
       }
       // Fall through
     }
+    // DOM 元素
     case HostComponent: {
       if (!offscreenSubtreeWasHidden) {
         safelyDetachRef(deletedFiber, nearestMountedAncestor);
@@ -1542,6 +1611,7 @@ function commitDeletionEffectsOnFiber(
       }
       // Intentional fallthrough to next branch
     }
+    // 文本节点
     case HostText: {
       // We only need to remove the nearest host child. Set the host parent
       // to `null` on the stack to indicate that nested children don't
@@ -1550,6 +1620,8 @@ function commitDeletionEffectsOnFiber(
         const prevHostParent = hostParent;
         const prevHostParentIsContainer = hostParentIsContainer;
         hostParent = null;
+
+        // 先处理子节点
         recursivelyTraverseDeletionEffects(
           finishedRoot,
           nearestMountedAncestor,
@@ -1561,6 +1633,7 @@ function commitDeletionEffectsOnFiber(
         if (hostParent !== null) {
           // Now that all the child effects have unmounted, we can remove the
           // node from the tree.
+          // 根容器
           if (hostParentIsContainer) {
             commitHostRemoveChildFromContainer(
               deletedFiber,
@@ -1569,6 +1642,7 @@ function commitDeletionEffectsOnFiber(
               (deletedFiber.stateNode: Instance | TextInstance),
             );
           } else {
+            // 非根容器
             commitHostRemoveChild(
               deletedFiber,
               nearestMountedAncestor,
@@ -1627,6 +1701,7 @@ function commitDeletionEffectsOnFiber(
       }
       break;
     }
+    // Portal
     case HostPortal: {
       if (supportsMutation) {
         // When we go into a portal, it becomes the parent to remove from.
@@ -1785,23 +1860,23 @@ function commitDeletionEffectsOnFiber(
     }
   }
 
-  if (
-    enableProfilerTimer &&
-    enableProfilerCommitHooks &&
-    enableComponentPerformanceTrack &&
-    (deletedFiber.mode & ProfileMode) !== NoMode &&
-    componentEffectStartTime >= 0 &&
-    componentEffectEndTime >= 0 &&
-    (componentEffectSpawnedUpdate || componentEffectDuration > 0.05)
-  ) {
-    logComponentEffect(
-      deletedFiber,
-      componentEffectStartTime,
-      componentEffectEndTime,
-      componentEffectDuration,
-      componentEffectErrors,
-    );
-  }
+  // if (
+  //   enableProfilerTimer &&
+  //   enableProfilerCommitHooks &&
+  //   enableComponentPerformanceTrack &&
+  //   (deletedFiber.mode & ProfileMode) !== NoMode &&
+  //   componentEffectStartTime >= 0 &&
+  //   componentEffectEndTime >= 0 &&
+  //   (componentEffectSpawnedUpdate || componentEffectDuration > 0.05)
+  // ) {
+  //   logComponentEffect(
+  //     deletedFiber,
+  //     componentEffectStartTime,
+  //     componentEffectEndTime,
+  //     componentEffectDuration,
+  //     componentEffectErrors,
+  //   );
+  // }
 
   popComponentEffectStart(prevEffectStart);
   popComponentEffectDuration(prevEffectDuration);
@@ -1977,25 +2052,41 @@ function isSuspenseBoundaryBeingHidden(
   return false;
 }
 
+/**
+ * commitMutationEffects 是 React Mutation 阶段的核心函数，负责遍历 Fiber 树并执行所有 DOM 突变操作。
+ * @param {*} root 
+ * @param {*} finishedWork 
+ * @param {*} committedLanes 
+ */
 export function commitMutationEffects(
   root: FiberRoot,
   finishedWork: Fiber,
   committedLanes: Lanes,
 ) {
-  inProgressLanes = committedLanes;
-  inProgressRoot = root;
+  // 设置全局状态
+  inProgressLanes = committedLanes; // 设置当前正在处理的 lanes
+  inProgressRoot = root; // 设置当前正在处理的根节点
 
   rootViewTransitionAffected = false;
   inUpdateViewTransition = false;
 
   resetComponentEffectTimers();
 
+  // 开始递归处理整个 Fiber 树，从根节点开始遍历
+  // 先删除后插入：确保删除操作在插入操作之前执行
+  // 广度优先遍历：处理完当前节点后遍历所有子节点
   commitMutationEffectsOnFiber(finishedWork, root, committedLanes);
 
   inProgressLanes = null;
   inProgressRoot = null;
 }
 
+/**
+ * React Mutation 阶段的递归遍历函数，负责按顺序处理删除操作和子节点的 mutation effects。
+ * @param {*} root 
+ * @param {*} parentFiber 
+ * @param {*} lanes 
+ */
 function recursivelyTraverseMutationEffects(
   root: FiberRoot,
   parentFiber: Fiber,
@@ -2003,6 +2094,7 @@ function recursivelyTraverseMutationEffects(
 ) {
   // Deletions effects can be scheduled on any fiber type. They need to happen
   // before the children effects have fired.
+  // 处理删除操作
   const deletions = parentFiber.deletions;
   if (deletions !== null) {
     for (let i = 0; i < deletions.length; i++) {
@@ -2011,17 +2103,24 @@ function recursivelyTraverseMutationEffects(
     }
   }
 
+  // 遍历子节点
   if (parentFiber.subtreeFlags & (MutationMask | Cloned)) {
     let child = parentFiber.child;
     while (child !== null) {
       commitMutationEffectsOnFiber(child, root, lanes);
-      child = child.sibling;
+      child = child.sibling; // 下一个兄弟节点
     }
   }
 }
 
 let currentHoistableRoot: HoistableRoot | null = null;
 
+/**
+ * commitMutationEffectsOnFiber 是 React Mutation 阶段的核心分发函数，根据 Fiber 节点类型执行不同的 DOM 突变操作。
+ * @param {*} finishedWork 
+ * @param {*} root 
+ * @param {*} lanes 
+ */
 function commitMutationEffectsOnFiber(
   finishedWork: Fiber,
   root: FiberRoot,
@@ -2046,6 +2145,7 @@ function commitMutationEffectsOnFiber(
       // This ensures that parent event effects are mutated before child effects.
       // This isn't a supported use case, so we can re-consider it,
       // but this was the behavior we originally shipped.
+      // 处理 useEffectEvent (如果启用)
       if (enableEffectEventMutationPhase) {
         if (flags & Update) {
           const updateQueue: FunctionComponentUpdateQueue | null =
@@ -2060,17 +2160,22 @@ function commitMutationEffectsOnFiber(
           }
         }
       }
+      // 递归遍历子节点
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
+      // 提交子节点的 reconciliation effects
       commitReconciliationEffects(finishedWork, lanes);
 
       if (flags & Update) {
+        // 执行 useInsertionEffect cleanup
         commitHookEffectListUnmount(
           HookInsertion | HookHasEffect,
           finishedWork,
           finishedWork.return,
         );
         // TODO: Use a commitHookInsertionUnmountEffects wrapper to record timings.
+        // 执行 useInsertionEffect
         commitHookEffectListMount(HookInsertion | HookHasEffect, finishedWork);
+        // 执行 useLayoutEffect cleanup
         commitHookLayoutUnmountEffects(
           finishedWork,
           finishedWork.return,
@@ -2205,6 +2310,7 @@ function commitMutationEffectsOnFiber(
 
       commitReconciliationEffects(finishedWork, lanes);
 
+      // 处理 Ref detach
       if (flags & Ref) {
         if (!offscreenSubtreeWasHidden && current !== null) {
           safelyDetachRef(current, current.return);
@@ -2217,10 +2323,12 @@ function commitMutationEffectsOnFiber(
         // the order matters. We should refactor so that ContentReset does not
         // rely on mutating the flag during commit. Like by setting a flag
         // during the render phase instead.
+        // 内容重置
         if (finishedWork.flags & ContentReset) {
           commitHostResetTextContent(finishedWork);
         }
 
+        // DOM 更新
         if (flags & Update) {
           const instance: Instance = finishedWork.stateNode;
           if (instance != null) {
@@ -2235,6 +2343,7 @@ function commitMutationEffectsOnFiber(
           }
         }
 
+        // 表单重置标记
         if (flags & FormReset) {
           needsFormReset = true;
           if (__DEV__) {
@@ -2365,9 +2474,14 @@ function commitMutationEffectsOnFiber(
       // host tree hierarchy; we can't assume that just because a portal's
       // HostComponent parent in the React tree will also be a parent in the
       // actual host tree. So we must hide all of them.
+      // 可见性继承：Portal 的直接子节点应继承最近的隐藏 OffscreenComponent 的状态
       const prevOffscreenDirectParentIsHidden = offscreenDirectParentIsHidden;
       offscreenDirectParentIsHidden = offscreenSubtreeIsHidden;
+
+      // 推入 Mutation 上下文
       const prevMutationContext = pushMutationContext();
+
+      // 处理资源型渲染器（如 React Native）
       if (supportsResources) {
         const previousHoistableRoot = currentHoistableRoot;
         currentHoistableRoot = getHoistableRoot(
@@ -2380,6 +2494,8 @@ function commitMutationEffectsOnFiber(
         recursivelyTraverseMutationEffects(root, finishedWork, lanes);
         commitReconciliationEffects(finishedWork, lanes);
       }
+
+      // View Transition 处理
       if (viewTransitionMutationContext && inUpdateViewTransition) {
         // A Portal doesn't necessarily exist within the context of this subtree.
         // Ideally we would track which React ViewTransition component nests the container
@@ -2387,6 +2503,8 @@ function commitMutationEffectsOnFiber(
         // Therefore any leaked mutation means that the root should animate.
         rootViewTransitionAffected = true;
       }
+
+      // 恢复之前的 mutation 上下文和 offscreen 状态
       popMutationContext(prevMutationContext);
       offscreenDirectParentIsHidden = prevOffscreenDirectParentIsHidden;
 
@@ -2965,6 +3083,12 @@ export function commitLayoutEffects(
   inProgressRoot = null;
 }
 
+/**
+ * 遍历子树，执行 layout effect
+ * @param {*} root 
+ * @param {*} parentFiber 
+ * @param {*} lanes 
+ */
 function recursivelyTraverseLayoutEffects(
   root: FiberRoot,
   parentFiber: Fiber,
@@ -2975,7 +3099,7 @@ function recursivelyTraverseLayoutEffects(
     while (child !== null) {
       const current = child.alternate;
       commitLayoutEffectOnFiber(root, current, child, lanes);
-      child = child.sibling;
+      child = child.sibling; // 递归遍历兄弟节点
     }
   }
 }
@@ -3512,6 +3636,14 @@ export function commitPassiveMountEffects(
   );
 }
 
+/**
+ * 递归遍历 fiber 子树，执行 Passive Mount Effects
+ * @param {*} root 根节点
+ * @param {*} parentFiber 父节点
+ * @param {*} committedLanes 提交的 Lane
+ * @param {*} committedTransitions 提交的 Transition
+ * @param {*} endTime 结束时间
+ */
 function recursivelyTraversePassiveMountEffects(
   root: FiberRoot,
   parentFiber: Fiber,
@@ -3519,14 +3651,20 @@ function recursivelyTraversePassiveMountEffects(
   committedTransitions: Array<Transition> | null,
   endTime: number, // Profiling-only. The start time of the next Fiber or root completion.
 ) {
+  // 检查 View Transition 资格  
   const isViewTransitionEligible =
     enableViewTransition &&
     includesOnlyViewTransitionEligibleLanes(committedLanes);
   // TODO: We could optimize this by marking these with the Passive subtree flag in the render phase.
+
+  // 确定子树掩码
   const subtreeMask = isViewTransitionEligible
+  // View Transition 模式：使用 PassiveTransitionMask
     ? PassiveTransitionMask
+    // 普通模式：使用 PassiveMask
     : PassiveMask;
   if (
+    // 子树有 passive effects
     parentFiber.subtreeFlags & subtreeMask ||
     // If this subtree rendered with profiling this commit, we need to visit it to log it.
     (enableProfilerTimer &&
@@ -3535,10 +3673,13 @@ function recursivelyTraversePassiveMountEffects(
       (parentFiber.alternate === null ||
         parentFiber.alternate.child !== parentFiber.child))
   ) {
+    // 递归遍历所有子 fiber  
     let child = parentFiber.child;
     while (child !== null) {
       if (enableProfilerTimer && enableComponentPerformanceTrack) {
+        // 从左到右遍历所有子 fiber
         const nextSibling = child.sibling;
+        // 对每个子 fiber 调用 commitPassiveMountOnFiber
         commitPassiveMountOnFiber(
           root,
           child,
@@ -3561,6 +3702,7 @@ function recursivelyTraversePassiveMountEffects(
       }
     }
   } else if (isViewTransitionEligible) {
+    // 恢复 View Transitions   
     // We are inside an updated subtree. Any mutations that affected the
     // parent HostInstance's layout or set of children (such as reorders)
     // might have also affected the positioning or size of the inner
@@ -3571,6 +3713,14 @@ function recursivelyTraversePassiveMountEffects(
 
 let inHydratedSubtree = false;
 
+/**
+ * 在 Passive 阶段，为 fiber 节点执行 Passive Effects 的 Mount
+ * @param {*} finishedRoot 完成的根节点
+ * @param {*} finishedWork 完成的 fiber
+ * @param {*} committedLanes 	已提交的 lanes
+ * @param {*} committedTransitions 已提交的 transitions
+ * @param {*} endTime 结束时间（profiling）
+ */
 function commitPassiveMountOnFiber(
   finishedRoot: FiberRoot,
   finishedWork: Fiber,
@@ -3578,12 +3728,14 @@ function commitPassiveMountOnFiber(
   committedTransitions: Array<Transition> | null,
   endTime: number, // Profiling-only. The start time of the next Fiber or root completion.
 ): void {
+  // 记录性能数据  
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
   const prevEffectErrors = pushComponentEffectErrors();
   const prevEffectDidSpawnUpdate = pushComponentEffectDidSpawnUpdate();
   const prevDeepEquality = pushDeepEquality();
 
+  // 检查 View Transition 资格
   const isViewTransitionEligible = enableViewTransition
     ? includesOnlyViewTransitionEligibleLanes(committedLanes)
     : false;
@@ -3631,6 +3783,7 @@ function commitPassiveMountOnFiber(
         );
       }
 
+      // 递归遍历子树
       recursivelyTraversePassiveMountEffects(
         finishedRoot,
         finishedWork,
@@ -3638,6 +3791,7 @@ function commitPassiveMountOnFiber(
         committedTransitions,
         endTime,
       );
+      // 如果有 Passive 标记，执行 commitHookPassiveMountEffects
       if (flags & Passive) {
         commitHookPassiveMountEffects(
           finishedWork,
@@ -3699,6 +3853,7 @@ function commitPassiveMountOnFiber(
           (finishedWork.flags & ForceClientRender) === NoFlags;
       }
 
+      // 递归遍历子树
       recursivelyTraversePassiveMountEffects(
         finishedRoot,
         finishedWork,
@@ -4177,6 +4332,7 @@ function commitPassiveMountOnFiber(
     }
   }
 
+  // 恢复性能数据 
   popComponentEffectStart(prevEffectStart);
   popComponentEffectDuration(prevEffectDuration);
   popComponentEffectErrors(prevEffectErrors);

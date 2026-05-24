@@ -430,15 +430,22 @@ export function listenToNativeEventForNonManagedEventTarget(
 const listeningMarker = '_reactListening' + Math.random().toString(36).slice(2);
 
 export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
+  // 使用随机标记防止同一容器重复注册事件
   if (!(rootContainerElement: any)[listeningMarker]) {
     (rootContainerElement: any)[listeningMarker] = true;
+
+    // 遍历所有原生事件
     allNativeEvents.forEach(domEventName => {
       // We handle selectionchange separately because it
       // doesn't bubble and needs to be on the document.
+      // 排除 selectionchange（特殊处理）
       if (domEventName !== 'selectionchange') {
+        // nonDelegatedEvents 代表非委托事件，那么！nonDelegatedEvents代表委托事件
         if (!nonDelegatedEvents.has(domEventName)) {
+          // 委托事件注册冒泡阶段
           listenToNativeEvent(domEventName, false, rootContainerElement);
         }
+        // 所有事件都注册捕获阶段
         listenToNativeEvent(domEventName, true, rootContainerElement);
       }
     });
@@ -451,6 +458,7 @@ export function listenToAllSupportedEvents(rootContainerElement: EventTarget) {
       // but it is attached to the document.
       if (!(ownerDocument: any)[listeningMarker]) {
         (ownerDocument: any)[listeningMarker] = true;
+        // selectionchange 不冒泡，必须绑定到 document
         listenToNativeEvent('selectionchange', false, ownerDocument);
       }
     }

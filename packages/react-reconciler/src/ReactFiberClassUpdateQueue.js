@@ -695,6 +695,11 @@ export function processUpdateQueue<State>(
   }
 }
 
+/**
+ * 安全地执行 callback，确保是函数且使用正确的 this 上下文
+ * @param {*} callback 回调函数
+ * @param {*} context this 上下文
+ */
 function callCallback(callback: () => mixed, context: any) {
   if (typeof callback !== 'function') {
     throw new Error(
@@ -703,7 +708,7 @@ function callCallback(callback: () => mixed, context: any) {
     );
   }
 
-  callback.call(context);
+  callback.call(context); // 执行 callback
 }
 
 export function resetHasForceUpdateBeforeProcessing() {
@@ -754,7 +759,9 @@ export function commitCallbacks<State>(
 ): void {
   const callbacks = updateQueue.callbacks;
   if (callbacks !== null) {
-    updateQueue.callbacks = null;
+    updateQueue.callbacks = null; // 重置
+
+    // 遍历
     for (let i = 0; i < callbacks.length; i++) {
       const callback = callbacks[i];
       callCallback(callback, context);

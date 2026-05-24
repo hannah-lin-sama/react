@@ -28,9 +28,12 @@ if (__DEV__) {
 }
 
 // A cursor to the current merged context object on the stack.
+// 初始化  contextStackCursor = { current: {}}
 const contextStackCursor: StackCursor<Object> =
   createCursor(emptyContextObject);
+
 // A cursor to a boolean indicating whether the context has changed.
+// 初始化  didPerformWorkStackCursor = { current: false}
 const didPerformWorkStackCursor: StackCursor<boolean> = createCursor(false);
 // Keep track of the previous context object that was on the stack.
 // We use this to get access to the parent context after we have already
@@ -144,14 +147,23 @@ function popTopLevelContextObject(fiber: Fiber): void {
   }
 }
 
+/**
+ * 负责将顶层上下文对象推入上下文栈
+ * @param {*} fiber 
+ * @param {*} context 
+ * @param {*} didChange 
+ * @returns 
+ */
 function pushTopLevelContextObject(
   fiber: Fiber,
   context: Object,
   didChange: boolean,
 ): void {
+  // 如果全局禁用了遗留上下文，则直接返回，不执行任何操作
   if (disableLegacyContext) {
     return;
   } else {
+    // 确保上下文栈在推入顶层上下文之前是空的，防止状态混乱
     if (contextStackCursor.current !== emptyContextObject) {
       throw new Error(
         'Unexpected context found on stack. ' +
@@ -159,7 +171,9 @@ function pushTopLevelContextObject(
       );
     }
 
+    // 将上下文对象推入 contextStackCursor 栈
     push(contextStackCursor, context, fiber);
+    // 将上下文变更标记推入 didPerformWorkStackCursor 栈，用于后续渲染决策。
     push(didPerformWorkStackCursor, didChange, fiber);
   }
 }

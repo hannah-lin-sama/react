@@ -138,54 +138,67 @@ export function commitHookLayoutUnmountEffects(
   }
 }
 
+/**
+ * 
+ * @param {*} flags Hook 类型标记（HookPassive、HookLayout、HookInsertion）
+ * @param {*} finishedWork 已完成的 fiber 节点
+ */
 export function commitHookEffectListMount(
   flags: HookFlags,
   finishedWork: Fiber,
 ) {
   try {
+    // 获取 updateQueue
     const updateQueue: FunctionComponentUpdateQueue | null =
       (finishedWork.updateQueue: any);
+
+      // 获取 lastEffect         
     const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+
+    // 遍历 Effect 循环链表  
     if (lastEffect !== null) {
       const firstEffect = lastEffect.next;
       let effect = firstEffect;
+      // 使用 do-while 确保至少执行一次
       do {
         if ((effect.tag & flags) === flags) {
-          if (enableSchedulingProfiler) {
-            if ((flags & HookPassive) !== NoHookEffect) {
-              markComponentPassiveEffectMountStarted(finishedWork);
-            } else if ((flags & HookLayout) !== NoHookEffect) {
-              markComponentLayoutEffectMountStarted(finishedWork);
-            }
-          }
+          // if (enableSchedulingProfiler) {
+          //   if ((flags & HookPassive) !== NoHookEffect) {
+          //     markComponentPassiveEffectMountStarted(finishedWork);
+          //   } else if ((flags & HookLayout) !== NoHookEffect) {
+          //     markComponentLayoutEffectMountStarted(finishedWork);
+          //   }
+          // }
 
           // Mount
           let destroy;
           if (__DEV__) {
-            if ((flags & HookInsertion) !== NoHookEffect) {
-              setIsRunningInsertionEffect(true);
-            }
-            destroy = runWithFiberInDEV(finishedWork, callCreateInDEV, effect);
-            if ((flags & HookInsertion) !== NoHookEffect) {
-              setIsRunningInsertionEffect(false);
-            }
+            // if ((flags & HookInsertion) !== NoHookEffect) {
+            //   setIsRunningInsertionEffect(true);
+            // }
+            // destroy = runWithFiberInDEV(finishedWork, callCreateInDEV, effect);
+            // if ((flags & HookInsertion) !== NoHookEffect) {
+            //   setIsRunningInsertionEffect(false);
+            // }
           } else {
             const create = effect.create;
             const inst = effect.inst;
-            destroy = create();
-            inst.destroy = destroy;
+            destroy = create(); // 执行 create 函数，返回 清理函数
+            inst.destroy = destroy; // 把清理函数赋值给 inst.destroy
           }
 
-          if (enableSchedulingProfiler) {
-            if ((flags & HookPassive) !== NoHookEffect) {
-              markComponentPassiveEffectMountStopped();
-            } else if ((flags & HookLayout) !== NoHookEffect) {
-              markComponentLayoutEffectMountStopped();
-            }
-          }
+          // if (enableSchedulingProfiler) {
+          //   if ((flags & HookPassive) !== NoHookEffect) {
+          //     markComponentPassiveEffectMountStopped();
+          //   } else if ((flags & HookLayout) !== NoHookEffect) {
+          //     markComponentLayoutEffectMountStopped();
+          //   }
+          // }
 
           if (__DEV__) {
+            // 返回值不是 undefined 且 返回值不是函数，报错
             if (destroy !== undefined && typeof destroy !== 'function') {
+              // 确定 Hook 名称
               let hookName;
               if ((effect.tag & HookLayout) !== NoFlags) {
                 hookName = 'useLayoutEffect';
@@ -195,12 +208,15 @@ export function commitHookEffectListMount(
                 hookName = 'useEffect';
               }
               let addendum;
+
+              // 返回 null，报错
               if (destroy === null) {
                 addendum =
                   ' You returned null. If your effect does not require clean ' +
                   'up, return undefined (or nothing).';
                 // $FlowFixMe (@poteto) this check is safe on arbitrary non-null/void objects
               } else if (typeof destroy.then === 'function') {
+                // 返回 Promise，报错
                 addendum =
                   '\n\nIt looks like you wrote ' +
                   hookName +
@@ -219,6 +235,7 @@ export function commitHookEffectListMount(
                   'Learn more about data fetching with Hooks: https://react.dev/link/hooks-data-fetching';
               } else {
                 // $FlowFixMe[unsafe-addition] (@poteto)
+                // 返回其他类型，报错
                 addendum = ' You returned: ' + destroy;
               }
               runWithFiberInDEV(
@@ -237,7 +254,7 @@ export function commitHookEffectListMount(
             }
           }
         }
-        effect = effect.next;
+        effect = effect.next; // 继续遍历下一个 effect
       } while (effect !== firstEffect);
     }
   } catch (error) {
@@ -245,6 +262,12 @@ export function commitHookEffectListMount(
   }
 }
 
+/**
+ * 执行 Hook Effects 的 Unmount（卸载清理）
+ * @param {*} flags Hook 类型标记
+ * @param {*} finishedWork 已完成的 fiber 节点
+ * @param {*} nearestMountedAncestor 最近的已挂载祖先
+ */
 export function commitHookEffectListUnmount(
   flags: HookFlags,
   finishedWork: Fiber,
@@ -254,6 +277,8 @@ export function commitHookEffectListUnmount(
     const updateQueue: FunctionComponentUpdateQueue | null =
       (finishedWork.updateQueue: any);
     const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
+
+    // 遍历 fiber 的 Effect 链表  
     if (lastEffect !== null) {
       const firstEffect = lastEffect.next;
       let effect = firstEffect;
@@ -263,37 +288,40 @@ export function commitHookEffectListUnmount(
           const inst = effect.inst;
           const destroy = inst.destroy;
           if (destroy !== undefined) {
-            inst.destroy = undefined;
-            if (enableSchedulingProfiler) {
-              if ((flags & HookPassive) !== NoHookEffect) {
-                markComponentPassiveEffectUnmountStarted(finishedWork);
-              } else if ((flags & HookLayout) !== NoHookEffect) {
-                markComponentLayoutEffectUnmountStarted(finishedWork);
-              }
-            }
+            inst.destroy = undefined; // 清理函数赋值为 undefined
+            // if (enableSchedulingProfiler) {
+            //   if ((flags & HookPassive) !== NoHookEffect) {
+            //     markComponentPassiveEffectUnmountStarted(finishedWork);
+            //   } else if ((flags & HookLayout) !== NoHookEffect) {
+            //     markComponentLayoutEffectUnmountStarted(finishedWork);
+            //   }
+            // }
 
-            if (__DEV__) {
-              if ((flags & HookInsertion) !== NoHookEffect) {
-                setIsRunningInsertionEffect(true);
-              }
-            }
+            // if (__DEV__) {
+            //   if ((flags & HookInsertion) !== NoHookEffect) {
+            //     setIsRunningInsertionEffect(true);
+            //   }
+            // }
+
+            // 执行 effect.inst.destroy
             safelyCallDestroy(finishedWork, nearestMountedAncestor, destroy);
-            if (__DEV__) {
-              if ((flags & HookInsertion) !== NoHookEffect) {
-                setIsRunningInsertionEffect(false);
-              }
-            }
 
-            if (enableSchedulingProfiler) {
-              if ((flags & HookPassive) !== NoHookEffect) {
-                markComponentPassiveEffectUnmountStopped();
-              } else if ((flags & HookLayout) !== NoHookEffect) {
-                markComponentLayoutEffectUnmountStopped();
-              }
-            }
+            // if (__DEV__) {
+            //   if ((flags & HookInsertion) !== NoHookEffect) {
+            //     setIsRunningInsertionEffect(false);
+            //   }
+            // }
+
+            // if (enableSchedulingProfiler) {
+            //   if ((flags & HookPassive) !== NoHookEffect) {
+            //     markComponentPassiveEffectUnmountStopped();
+            //   } else if ((flags & HookLayout) !== NoHookEffect) {
+            //     markComponentLayoutEffectUnmountStopped();
+            //   }
+            // }
           }
         }
-        effect = effect.next;
+        effect = effect.next; // 继续遍历下一个 effect
       } while (effect !== firstEffect);
     }
   } catch (error) {
@@ -301,19 +329,32 @@ export function commitHookEffectListUnmount(
   }
 }
 
+/**
+ * 执行函数组件的 Passive Effects 的 Mount 阶段
+ * - 执行 useEffect 的 create() 函数  
+ * 时机：在 Commit 阶段的 Passive 阶段     
+ * @param {*} finishedWork 已完成的 fiber 节点
+ * @param {*} hookFlags Hook 标志位
+ */
 export function commitHookPassiveMountEffects(
   finishedWork: Fiber,
   hookFlags: HookFlags,
 ) {
   if (shouldProfile(finishedWork)) {
     startEffectTimer();
-    commitHookEffectListMount(hookFlags, finishedWork);
+    commitHookEffectListMount(hookFlags, finishedWork); // 执行 effects
     recordEffectDuration(finishedWork);
   } else {
-    commitHookEffectListMount(hookFlags, finishedWork);
+    commitHookEffectListMount(hookFlags, finishedWork); // 直接执行
   }
 }
 
+/**
+ * 执行函数组件的 Passive Effects 的 Unmount 阶段
+ * @param {*} finishedWork 
+ * @param {*} nearestMountedAncestor 
+ * @param {*} hookFlags 
+ */
 export function commitHookPassiveUnmountEffects(
   finishedWork: Fiber,
   nearestMountedAncestor: null | Fiber,
@@ -336,6 +377,11 @@ export function commitHookPassiveUnmountEffects(
   }
 }
 
+/**
+ * 执行 ClassComponent 的 Layout 阶段生命周期方法
+ * @param {*} finishedWork 已完成的 fiber 节点
+ * @param {*} current 旧 fiber
+ */
 export function commitClassLayoutLifecycles(
   finishedWork: Fiber,
   current: Fiber | null,
@@ -400,6 +446,8 @@ export function commitClassLayoutLifecycles(
         );
       } else {
         try {
+          // 首次渲染时， current 为 null
+          // 执行 componentDidMount()   
           instance.componentDidMount();
         } catch (error) {
           captureCommitPhaseError(finishedWork, finishedWork.return, error);
@@ -480,10 +528,11 @@ export function commitClassLayoutLifecycles(
         );
       } else {
         try {
+          // 执行 componentDidUpdate()   
           instance.componentDidUpdate(
-            prevProps,
-            prevState,
-            instance.__reactInternalSnapshotBeforeUpdate,
+            prevProps,// 旧 props
+            prevState, // 旧 state
+            instance.__reactInternalSnapshotBeforeUpdate,// getSnapshotBeforeUpdate() 的返回值 
           );
         } catch (error) {
           captureCommitPhaseError(finishedWork, finishedWork.return, error);
@@ -493,17 +542,21 @@ export function commitClassLayoutLifecycles(
   }
 }
 
+/**
+ * 执行组件的 componentDidMount 方法
+ * @param {*} finishedWork 
+ */
 export function commitClassDidMount(finishedWork: Fiber) {
   // TODO: Check for LayoutStatic flag
   const instance = finishedWork.stateNode;
   if (typeof instance.componentDidMount === 'function') {
     if (__DEV__) {
-      runWithFiberInDEV(
-        finishedWork,
-        callComponentDidMountInDEV,
-        finishedWork,
-        instance,
-      );
+      // runWithFiberInDEV(
+      //   finishedWork,
+      //   callComponentDidMountInDEV,
+      //   finishedWork,
+      //   instance,
+      // );
     } else {
       try {
         instance.componentDidMount();
@@ -514,11 +567,16 @@ export function commitClassDidMount(finishedWork: Fiber) {
   }
 }
 
+/**
+ * 执行 ClassComponent 的 setState callback（回调）
+ * @param {*} finishedWork 
+ */
 export function commitClassCallbacks(finishedWork: Fiber) {
   // TODO: I think this is now always non-null by the time it reaches the
   // commit phase. Consider removing the type check.
   const updateQueue: UpdateQueue<mixed> | null =
     (finishedWork.updateQueue: any);
+    
   if (updateQueue !== null) {
     const instance = finishedWork.stateNode;
     if (__DEV__) {
@@ -706,6 +764,12 @@ export function commitClassSnapshot(finishedWork: Fiber, current: Fiber) {
 }
 
 // Capture errors so they don't interrupt unmounting.
+/**
+ * 安全调用组件的 componentWillUnmount 方法
+ * @param {*} current 
+ * @param {*} nearestMountedAncestor 
+ * @param {*} instance 
+ */
 export function safelyCallComponentWillUnmount(
   current: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -736,13 +800,13 @@ export function safelyCallComponentWillUnmount(
     recordEffectDuration(current);
   } else {
     if (__DEV__) {
-      runWithFiberInDEV(
-        current,
-        callComponentWillUnmountInDEV,
-        current,
-        nearestMountedAncestor,
-        instance,
-      );
+      // runWithFiberInDEV(
+      //   current,
+      //   callComponentWillUnmountInDEV,
+      //   current,
+      //   nearestMountedAncestor,
+      //   instance,
+      // );
     } else {
       try {
         instance.componentWillUnmount();
@@ -752,7 +816,10 @@ export function safelyCallComponentWillUnmount(
     }
   }
 }
-
+/**
+ * 将 Ref 附加到 DOM 实例或组件实例
+ * @param {*} finishedWork 
+ */
 function commitAttachRef(finishedWork: Fiber) {
   const ref = finishedWork.ref;
   if (ref !== null) {
@@ -790,6 +857,7 @@ function commitAttachRef(finishedWork: Fiber) {
       default:
         instanceToUse = finishedWork.stateNode;
     }
+    // 函数 ref：调用 ref(instance) 
     if (typeof ref === 'function') {
       if (shouldProfile(finishedWork)) {
         try {
@@ -802,12 +870,19 @@ function commitAttachRef(finishedWork: Fiber) {
         finishedWork.refCleanup = ref(instanceToUse);
       }
     } else {
+      
       if (__DEV__) {
         // TODO: We should move these warnings to happen during the render
         // phase (markRef).
+        // 不再支持字符串 ref，仅支持函数 ref 或对象 ref
         if (typeof ref === 'string') {
+          // 字符串 ref 是旧版 React 的特性，已废弃
           console.error('String refs are no longer supported.');
+          
+
+        //  检查 ref 是否有 current 属性，如果没有，说明是无效的 ref 对象
         } else if (!ref.hasOwnProperty('current')) {
+          // 提示使用 useRef() 或 React.createRef()
           console.error(
             'Unexpected ref object provided for %s. ' +
               'Use either a ref-setter function or React.createRef().',
@@ -816,6 +891,7 @@ function commitAttachRef(finishedWork: Fiber) {
         }
       }
 
+      // 对象 ref：ref.current = instance  
       // $FlowFixMe[incompatible-use] unable to narrow type to the non-function case
       ref.current = instanceToUse;
     }
@@ -823,6 +899,11 @@ function commitAttachRef(finishedWork: Fiber) {
 }
 
 // Capture errors so they don't interrupt mounting.
+/**
+ * 安全地附加 Ref 引用
+ * @param {*} current 
+ * @param {*} nearestMountedAncestor 
+ */
 export function safelyAttachRef(
   current: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -838,6 +919,11 @@ export function safelyAttachRef(
   }
 }
 
+/**
+ * 安全地分离 Ref 引用
+ * @param {*} current 当前 fiber 节点
+ * @param {*} nearestMountedAncestor 最近的已挂载祖先
+ */
 export function safelyDetachRef(
   current: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -846,22 +932,23 @@ export function safelyDetachRef(
   const refCleanup = current.refCleanup;
 
   if (ref !== null) {
+    // 如果有 refCleanup，调用清理函数  
     if (typeof refCleanup === 'function') {
       try {
         if (shouldProfile(current)) {
-          try {
-            startEffectTimer();
-            if (__DEV__) {
-              runWithFiberInDEV(current, refCleanup);
-            } else {
-              refCleanup();
-            }
-          } finally {
-            recordEffectDuration(current);
-          }
+          // try {
+          //   startEffectTimer();
+          //   if (__DEV__) {
+          //     runWithFiberInDEV(current, refCleanup);
+          //   } else {
+          //     refCleanup();
+          //   }
+          // } finally {
+          //   recordEffectDuration(current);
+          // }
         } else {
           if (__DEV__) {
-            runWithFiberInDEV(current, refCleanup);
+            // runWithFiberInDEV(current, refCleanup);
           } else {
             refCleanup();
           }
@@ -877,21 +964,22 @@ export function safelyDetachRef(
         }
       }
     } else if (typeof ref === 'function') {
+      // 如果是函数 ref，调用 ref(null) 解绑    
       try {
         if (shouldProfile(current)) {
-          try {
-            startEffectTimer();
-            if (__DEV__) {
-              (runWithFiberInDEV(current, ref, null): void);
-            } else {
-              ref(null);
-            }
-          } finally {
-            recordEffectDuration(current);
-          }
+          // try {
+          //   startEffectTimer();
+          //   if (__DEV__) {
+          //     (runWithFiberInDEV(current, ref, null): void);
+          //   } else {
+          //     ref(null);
+          //   }
+          // } finally {
+          //   recordEffectDuration(current);
+          // }
         } else {
           if (__DEV__) {
-            (runWithFiberInDEV(current, ref, null): void);
+            // (runWithFiberInDEV(current, ref, null): void);
           } else {
             ref(null);
           }
@@ -900,12 +988,20 @@ export function safelyDetachRef(
         captureCommitPhaseError(current, nearestMountedAncestor, error);
       }
     } else {
+      // 如果是对象 ref，设置 ref.current = null 
       // $FlowFixMe[incompatible-use] unable to narrow type to RefObject
       ref.current = null;
     }
   }
 }
 
+/**
+ * 为什么需要 safelyCallDestroy？  
+ * - 防止清理函数抛出错误导致渲染崩溃     
+ * @param {*} current 
+ * @param {*} nearestMountedAncestor 
+ * @param {*} destroy 
+ * @param  {...any} */ 
 function safelyCallDestroy(
   current: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -913,6 +1009,7 @@ function safelyCallDestroy(
   resource?: {...} | void | null,
 ) {
   // $FlowFixMe[extra-arg] @poteto this is safe either way because the extra arg is ignored if it's not a CRUD effect
+  // 支持带资源的清理函数   
   const destroy_ = resource == null ? destroy : destroy.bind(null, resource);
   if (__DEV__) {
     runWithFiberInDEV(
@@ -925,7 +1022,7 @@ function safelyCallDestroy(
   } else {
     try {
       // $FlowFixMe(incompatible-call) Already bound to resource
-      destroy_();
+      destroy_(); // 执行 effect.inst.destroy
     } catch (error) {
       captureCommitPhaseError(current, nearestMountedAncestor, error);
     }

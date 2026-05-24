@@ -22,11 +22,12 @@ function flushSyncImpl<R>(fn: (() => R) | void): R | void {
     ReactDOMSharedInternals.p; /* ReactDOMCurrentUpdatePriority */
 
   try {
-    ReactSharedInternals.T = null;
+    ReactSharedInternals.T = null; // 清除 Transition
+    // 设置最高优先级（DiscreteEventPriority， 2）
     ReactDOMSharedInternals.p /* ReactDOMCurrentUpdatePriority */ =
       DiscreteEventPriority;
     if (fn) {
-      return fn();
+      return fn(); // 执行提供的函数
     } else {
       return undefined;
     }
@@ -34,10 +35,13 @@ function flushSyncImpl<R>(fn: (() => R) | void): R | void {
     ReactSharedInternals.T = previousTransition;
     ReactDOMSharedInternals.p /* ReactDOMCurrentUpdatePriority */ =
       previousUpdatePriority;
+
+      // 调用 flushSyncWork 同步刷新所有待处理的更新
     const wasInRender =
       ReactDOMSharedInternals.d /* ReactDOMCurrentDispatcher */
         .f(); /* flushSyncWork */
     if (__DEV__) {
+      // 在渲染过程中调用 flushSync 会导致问题
       if (wasInRender) {
         console.error(
           'flushSync was called from inside a lifecycle method. React cannot ' +

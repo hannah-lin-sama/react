@@ -427,17 +427,26 @@ function appendAllChildrenToContainer(
   return hasOffscreenComponentChild;
 }
 
+/**
+ * updateHostContainer 是 React 持久化（Persistence）系统的核心函数，负责在完成阶段更新 Host 容器的子节点集合。
+ * @param {*} current 
+ * @param {*} workInProgress 
+ */
 function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
+  // 只有在支持持久化的环境中才执行此逻辑
   if (supportsPersistence) {
     if (doesRequireClone(current, workInProgress)) {
       const portalOrRoot: {
         containerInfo: Container,
         pendingChildren: ChildSet,
+        // 在 TypeScript 类型字面量中，... 表示开放类型（Open Type），允许对象包含未在类型注解中列出的其他属性
         ...
       } = workInProgress.stateNode;
       const container = portalOrRoot.containerInfo;
+      // 创建一个新的容器子节点集合
       const newChildSet = createContainerChildSet();
       // If children might have changed, we have to add them all to the set.
+      // 将所有子节点添加到新的 ChildSet 中
       appendAllChildrenToContainer(
         newChildSet,
         workInProgress,
@@ -447,6 +456,7 @@ function updateHostContainer(current: null | Fiber, workInProgress: Fiber) {
       portalOrRoot.pendingChildren = newChildSet;
       // Schedule an update on the container to swap out the container.
       markUpdate(workInProgress);
+      // 完成容器子节点处理
       finalizeContainerChildren(container, newChildSet);
     }
   }
@@ -778,6 +788,12 @@ function isOnlyNewMounts(tail: Fiber): boolean {
   return true;
 }
 
+/**
+ * bubbleProperties 是 React Fiber 完成阶段的核心函数，
+ * 负责将子节点的属性（lanes、flags、profiler 数据）冒泡到父节点，构建完整的 Fiber 树状态。
+ * @param {*} completedWork 
+ * @returns 
+ */
 function bubbleProperties(completedWork: Fiber) {
   const didBailout =
     completedWork.alternate !== null &&
@@ -786,6 +802,7 @@ function bubbleProperties(completedWork: Fiber) {
   let newChildLanes: Lanes = NoLanes;
   let subtreeFlags: Flags = NoFlags;
 
+  // 完整冒泡所有属性，包括动态 flags
   if (!didBailout) {
     // Bubble up the earliest expiration time.
     if (enableProfilerTimer && (completedWork.mode & ProfileMode) !== NoMode) {
@@ -842,6 +859,8 @@ function bubbleProperties(completedWork: Fiber) {
     }
 
     completedWork.subtreeFlags |= subtreeFlags;
+
+    // bailout 时只保留静态 flags，动态 flags 属于单次渲染生命周期。
   } else {
     // Bubble up the earliest expiration time.
     if (enableProfilerTimer && (completedWork.mode & ProfileMode) !== NoMode) {
@@ -1477,6 +1496,7 @@ function completeWork(
           prepareToHydrateHostTextInstance(workInProgress);
         } else {
           markCloned(workInProgress);
+          // 创建文本实例
           workInProgress.stateNode = createTextInstance(
             newText,
             rootContainerInstance,
@@ -1528,6 +1548,8 @@ function completeWork(
       bubbleProperties(workInProgress);
       return null;
     }
+    // 处理 SuspenseComponent 的分支，
+    // 负责完成 Suspense 组件的渲染阶段工作，包括脱水边界处理、挂起状态管理、缓存管理和重试调度。
     case SuspenseComponent: {
       const nextState: null | SuspenseState = workInProgress.memoizedState;
 
@@ -1549,6 +1571,8 @@ function completeWork(
           );
         if (!fallthroughToNormalSuspensePath) {
           if (workInProgress.flags & ForceClientRender) {
+            // 弹出 Suspense 处理器
+            // 与 beginWork 中的 pushSuspenseHandler 配对，管理 Suspense 上下文栈。
             popSuspenseHandler(workInProgress);
             // Special case. There were remaining unhydrated nodes. We treat
             // this as a mismatch. Revert to client rendering.
@@ -1568,6 +1592,7 @@ function completeWork(
 
       if ((workInProgress.flags & DidCapture) !== NoFlags) {
         // Something suspended. Re-render with the fallback children.
+        // 有子节点挂起，需要重新渲染 fallback
         workInProgress.lanes = renderLanes;
         if (
           enableProfilerTimer &&
@@ -1576,6 +1601,7 @@ function completeWork(
           transferActualDuration(workInProgress);
         }
         // Don't bubble properties in this case.
+        // 返回非 null，触发重新渲染
         return workInProgress;
       }
 
@@ -1645,28 +1671,35 @@ function completeWork(
         workInProgress.flags |= Update;
       }
       bubbleProperties(workInProgress);
-      if (enableProfilerTimer) {
-        if ((workInProgress.mode & ProfileMode) !== NoMode) {
-          if (nextDidTimeout) {
-            // Don't count time spent in a timed out Suspense subtree as part of the base duration.
-            const primaryChildFragment = workInProgress.child;
-            if (primaryChildFragment !== null) {
-              // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
-              workInProgress.treeBaseDuration -=
-                ((primaryChildFragment.treeBaseDuration: any): number);
-            }
-          }
-        }
-      }
+      // if (enableProfilerTimer) {
+      //   if ((workInProgress.mode & ProfileMode) !== NoMode) {
+      //     if (nextDidTimeout) {
+      //       // Don't count time spent in a timed out Suspense subtree as part of the base duration.
+      //       const primaryChildFragment = workInProgress.child;
+      //       if (primaryChildFragment !== null) {
+      //         // $FlowFixMe[unsafe-arithmetic] Flow doesn't support type casting in combination with the -= operator
+      //         workInProgress.treeBaseDuration -=
+      //           ((primaryChildFragment.treeBaseDuration: any): number);
+      //       }
+      //     }
+      //   }
+      // }
       return null;
     }
+    // 处理 HostPortal 类型 Fiber 的完成阶段
     case HostPortal:
+      // 弹出上下文栈中的 Host 容器
       popHostContainer(workInProgress);
+      // 更新 Host 容器信息
       updateHostContainer(current, workInProgress);
       if (current === null) {
+        // 准备 Portal 挂载
+        // preparePortalMount 是 React DOM 渲染器配置的一部分，负责在 Portal 首次挂载时为容器注册事件监听器
         preparePortalMount(workInProgress.stateNode.containerInfo);
       }
-      workInProgress.flags |= PortalStatic;
+      // 标记为静态 Portal
+      workInProgress.flags |= PortalStatic; // 67108864
+      // 冒泡属性到父节点
       bubbleProperties(workInProgress);
       return null;
     case ContextProvider:

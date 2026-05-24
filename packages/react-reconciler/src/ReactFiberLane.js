@@ -683,13 +683,13 @@ export function includesLoadingIndicatorLanes(lanes: Lanes): boolean {
 
 export function includesBlockingLane(lanes: Lanes): boolean {
   const SyncDefaultLanes =
-    SyncHydrationLane |
-    SyncLane |
-    InputContinuousHydrationLane |
-    InputContinuousLane |
-    DefaultHydrationLane |
-    DefaultLane |
-    GestureLane;
+    SyncHydrationLane | 1 // 水合
+    SyncLane | // 2 同步 lane，立即执行
+    InputContinuousHydrationLane | 4 // 输入水合 
+    InputContinuousLane | // 8 输入连续事件 ，需要即时响应
+    DefaultHydrationLane | 16 // 默认水合
+    DefaultLane | // 32 默认 lane
+    GestureLane; // 64 手势 lane，需要流畅体验
   return (lanes & SyncDefaultLanes) !== NoLanes;
 }
 
