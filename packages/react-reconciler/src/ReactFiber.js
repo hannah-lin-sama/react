@@ -567,6 +567,7 @@ export function createHostRootFiber(
     mode |= ProfileMode;
   }
 
+  // HostRoot 3
   return createFiber(HostRoot, null, null, mode);
 }
 
@@ -777,6 +778,7 @@ export function createFiberFromFragment(
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // Fragment 7
   const fiber = createFiber(Fragment, elements, key, mode);
   fiber.lanes = lanes;
   return fiber;
@@ -789,6 +791,7 @@ function createFiberFromScope(
   lanes: Lanes,
   key: ReactKey,
 ) {
+  // ScopeComponent 21
   const fiber = createFiber(ScopeComponent, pendingProps, key, mode);
   fiber.type = scope;
   fiber.elementType = scope;
@@ -811,6 +814,7 @@ function createFiberFromProfiler(
     }
   }
 
+  // Profiler 12
   const fiber = createFiber(Profiler, pendingProps, key, mode | ProfileMode);
   fiber.elementType = REACT_PROFILER_TYPE;
   fiber.lanes = lanes;
@@ -831,6 +835,7 @@ export function createFiberFromSuspense(
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // SuspenseComponent 13
   const fiber = createFiber(SuspenseComponent, pendingProps, key, mode);
   fiber.elementType = REACT_SUSPENSE_TYPE;
   fiber.lanes = lanes;
@@ -843,52 +848,84 @@ export function createFiberFromSuspenseList(
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // SuspenseListComponent 19
   const fiber = createFiber(SuspenseListComponent, pendingProps, key, mode);
   fiber.elementType = REACT_SUSPENSE_LIST_TYPE;
   fiber.lanes = lanes;
   return fiber;
 }
 
+/**
+ * 创建 OffscreenComponent fiber
+ * @param {*} pendingProps 
+ * @param {*} mode 
+ * @param {*} lanes 
+ * @param {*} key 
+ * @returns 
+ */
 export function createFiberFromOffscreen(
   pendingProps: OffscreenProps,
   mode: TypeOfMode,
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // OffscreenComponent 22
   const fiber = createFiber(OffscreenComponent, pendingProps, key, mode);
   fiber.lanes = lanes;
   return fiber;
 }
+
+/**
+ * 创建 ActivityComponent fiber
+ * @param {*} pendingProps 
+ * @param {*} mode 
+ * @param {*} lanes 
+ * @param {*} key 
+ * @returns 
+ */
 export function createFiberFromActivity(
   pendingProps: ActivityProps,
   mode: TypeOfMode,
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // ActivityComponent 31
   const fiber = createFiber(ActivityComponent, pendingProps, key, mode);
   fiber.elementType = REACT_ACTIVITY_TYPE;
   fiber.lanes = lanes;
   return fiber;
 }
 
+/**
+ * 创建 ViewTransitionComponent fiber
+ * @param {*} pendingProps 
+ * @param {*} mode 
+ * @param {*} lanes 
+ * @param {*} key 
+ * @returns 
+ */
 export function createFiberFromViewTransition(
   pendingProps: ViewTransitionProps,
   mode: TypeOfMode,
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // 即使未开启 SuspenseyImages，也要启用该模式
   if (!enableSuspenseyImages) {
     // Render a ViewTransition component opts into SuspenseyImages mode even
     // when the flag is off.
     mode |= SuspenseyImagesMode;
   }
   const fiber = createFiber(ViewTransitionComponent, pendingProps, key, mode);
+  // 标记为 View Transition 类型
   fiber.elementType = REACT_VIEW_TRANSITION_TYPE;
   fiber.lanes = lanes;
+
+  // 实例
   const instance: ViewTransitionState = {
-    autoName: null,
-    paired: null,
-    clones: null,
+    autoName: null, // 自动生成的名称
+    paired: null, //  ViewTransition
+    clones: null, // 克隆的 ViewTransition
     ref: null,
   };
   fiber.stateNode = instance;
@@ -901,6 +938,7 @@ export function createFiberFromLegacyHidden(
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // LegacyHiddenComponent 23
   const fiber = createFiber(LegacyHiddenComponent, pendingProps, key, mode);
   fiber.elementType = REACT_LEGACY_HIDDEN_TYPE;
   fiber.lanes = lanes;
@@ -913,6 +951,7 @@ export function createFiberFromTracingMarker(
   lanes: Lanes,
   key: ReactKey,
 ): Fiber {
+  // TracingMarkerComponent 25
   const fiber = createFiber(TracingMarkerComponent, pendingProps, key, mode);
   fiber.elementType = REACT_TRACING_MARKER_TYPE;
   fiber.lanes = lanes;
@@ -932,6 +971,7 @@ export function createFiberFromText(
   mode: TypeOfMode,
   lanes: Lanes,
 ): Fiber {
+  // HostText 6
   const fiber = createFiber(HostText, content, null, mode);
   fiber.lanes = lanes;
   return fiber;
@@ -940,6 +980,7 @@ export function createFiberFromText(
 export function createFiberFromDehydratedFragment(
   dehydratedNode: SuspenseInstance | ActivityInstance,
 ): Fiber {
+  // DehydratedFragment 18
   const fiber = createFiber(DehydratedFragment, null, null, NoMode);
   fiber.stateNode = dehydratedNode;
   return fiber;
@@ -959,6 +1000,7 @@ export function createFiberFromPortal(
 ): Fiber {
   const pendingProps = portal.children !== null ? portal.children : [];
 
+  // HostPortal 4
   // 创建类型为 HostPortal 的 Fiber 节点。
   const fiber = createFiber(HostPortal, pendingProps, portal.key, mode);
   // 将调度优先级传递给 Fiber。
@@ -972,6 +1014,13 @@ export function createFiberFromPortal(
   return fiber;
 }
 
+/**
+ * 创建 Throw 类型的 fiber，用于错误传播
+ * @param {*} error 
+ * @param {*} mode 
+ * @param {*} lanes 
+ * @returns 
+ */
 export function createFiberFromThrow(
   error: mixed,
   mode: TypeOfMode,

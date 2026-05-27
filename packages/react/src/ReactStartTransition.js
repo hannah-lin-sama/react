@@ -127,6 +127,13 @@ export function startTransition(
   }
 }
 
+/**
+ * 启动手势 Transition，用于手势动画的协调
+ * @param {*} provider 手势提供者（Timeline）
+ * @param {*} scope 	同步回调函数
+ * @param {*} options 
+ * @returns 
+ */
 export function startGestureTransition(
   provider: GestureProvider,
   scope: () => void,
@@ -146,12 +153,18 @@ export function startGestureTransition(
       'A Timeline is required as the first argument to startGestureTransition.',
     );
   }
+  // 保存前一个 Transition
   const prevTransition = ReactSharedInternals.T;
+
+  // 创建新的 Transition
   const currentTransition: Transition = ({}: any);
+
+  // 设置 View Transition 类型
   if (enableViewTransition) {
     currentTransition.types = null;
   }
   if (enableGestureTransition) {
+    // 设置手势提供者
     currentTransition.gesture = provider;
   }
   if (enableTransitionTracing) {
@@ -165,7 +178,10 @@ export function startGestureTransition(
   ReactSharedInternals.T = currentTransition;
 
   try {
+    // 执行回调
     const returnValue = scope();
+
+    // 手势必须立即开始，不能等待异步操作
     if (__DEV__) {
       if (
         typeof returnValue === 'object' &&
@@ -178,6 +194,7 @@ export function startGestureTransition(
       }
     }
     const onStartGestureTransitionFinish = ReactSharedInternals.G;
+    // 通知调度器
     if (onStartGestureTransitionFinish !== null) {
       return onStartGestureTransitionFinish(
         currentTransition,

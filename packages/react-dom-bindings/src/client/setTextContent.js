@@ -22,15 +22,18 @@ function setTextContent(node: Element, text: string): void {
   if (text) {
     const firstChild = node.firstChild;
 
+    // 如果只有一个子节点，且是文本节点，直接设置文本内容
     if (
       firstChild &&
       firstChild === node.lastChild &&
       firstChild.nodeType === TEXT_NODE
     ) {
+      //
       firstChild.nodeValue = text;
       return;
     }
   }
+  // 其他情况，直接设置文本内容
   node.textContent = text;
 }
 

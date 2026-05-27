@@ -178,6 +178,12 @@ export const suspenseStackCursor: StackCursor<SuspenseContext> = createCursor(
   DefaultSuspenseContext,
 );
 
+/**
+ * 检查 Suspense 上下文中是否包含特定标志
+ * @param {*} parentContext 父级 Suspense 上下文
+ * @param {*} flag 要检查的标志位
+ * @returns 
+ */
 export function hasSuspenseListContext(
   parentContext: SuspenseContext,
   flag: SuspenseContext,

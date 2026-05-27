@@ -116,12 +116,18 @@ export function getSelectionInformation(containerInfo) {
  * @restoreSelection: If any selection information was potentially lost,
  * restore it. This is useful when performing operations that could remove dom
  * nodes and place them back in, resulting in focus being lost.
+ * 恢复 DOM 操作前的选择状态
  */
 export function restoreSelection(priorSelectionInformation, containerInfo) {
+  // 获取当前焦点元素
   const curFocusedElem = getActiveElementDeep(containerInfo);
+  // 获取之前的状态
   const priorFocusedElem = priorSelectionInformation.focusedElem;
   const priorSelectionRange = priorSelectionInformation.selectionRange;
+
+  // 如果焦点元素变化且之前的元素在文档中
   if (curFocusedElem !== priorFocusedElem && isInDocument(priorFocusedElem)) {
+    // 恢复选择范围
     if (
       priorSelectionRange !== null &&
       hasSelectionCapabilities(priorFocusedElem)
@@ -130,6 +136,7 @@ export function restoreSelection(priorSelectionInformation, containerInfo) {
     }
 
     // Focusing a node can change the scroll position, which is undesirable
+    // 保存滚动位置
     const ancestors = [];
     let ancestor = priorFocusedElem;
     while ((ancestor = ancestor.parentNode)) {
@@ -142,10 +149,12 @@ export function restoreSelection(priorSelectionInformation, containerInfo) {
       }
     }
 
+    // 恢复焦点
     if (typeof priorFocusedElem.focus === 'function') {
       priorFocusedElem.focus();
     }
 
+    // 恢复滚动位置
     for (let i = 0; i < ancestors.length; i++) {
       const info = ancestors[i];
       info.element.scrollLeft = info.left;

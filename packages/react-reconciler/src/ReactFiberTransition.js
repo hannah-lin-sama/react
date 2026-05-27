@@ -205,27 +205,39 @@ const resumedCache: StackCursor<Cache | null> = createCursor(null);
 const transitionStack: StackCursor<Array<Transition> | null> =
   createCursor(null);
 
+  /**
+   * 从缓存池中获取缓存
+   * @returns 
+   */
 function peekCacheFromPool(): Cache | null {
   // Check if the cache pool already has a cache we can use.
 
   // If we're rendering inside a Suspense boundary that is currently hidden,
   // we should use the same cache that we used during the previous render, if
   // one exists.
+  // 优先返回上次渲染恢复的缓存  
   const cacheResumedFromPreviousRender = resumedCache.current;
   if (cacheResumedFromPreviousRender !== null) {
     return cacheResumedFromPreviousRender;
   }
 
   // Otherwise, check the root's cache pool.
+  // 返回 root 缓存池中的缓存  
   const root = (getWorkInProgressRoot(): any);
   const cacheFromRootCachePool = root.pooledCache;
 
   return cacheFromRootCachePool;
 }
 
+/**
+ * 获取或创建缓存
+ * @param {*} renderLanes 
+ * @returns 
+ */
 export function requestCacheFromPool(renderLanes: Lanes): Cache {
   // Similar to previous function, except if there's not already a cache in the
   // pool, we allocate a new one.
+  // 尝试从缓存池获取缓存 
   const cacheFromPool = peekCacheFromPool();
   if (cacheFromPool !== null) {
     return cacheFromPool;
@@ -242,8 +254,11 @@ export function requestCacheFromPool(renderLanes: Lanes): Cache {
   //   component. These retain and release in the commit phase.
 
   const root = (getWorkInProgressRoot(): any);
+  // 创建新缓存  
   const freshCache = createCache();
+  // 添加到 root 缓存池 
   root.pooledCache = freshCache;
+  // 增加缓存的引用计数，防止被 GC 回收
   retainCache(freshCache);
   if (freshCache !== null) {
     root.pooledCacheLanes |= renderLanes;
@@ -316,6 +331,10 @@ export function getPendingTransitions(): Array<Transition> | null {
   return transitionStack.current;
 }
 
+/**
+ * 获取 Suspense 挂起时要使用的缓存池
+ * @returns 
+ */
 export function getSuspendedCache(): SpawnedCachePool | null {
   // This function is called when a Suspense boundary suspends. It returns the
   // cache that would have been used to render fresh data during this render,
@@ -326,6 +345,7 @@ export function getSuspendedCache(): SpawnedCachePool | null {
     return null;
   }
 
+  // 如果有缓存，返回带 parent 的缓存结构 
   return {
     // We must also save the parent, so that when we resume we can detect
     // a refresh.

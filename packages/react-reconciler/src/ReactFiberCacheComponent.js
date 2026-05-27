@@ -79,16 +79,25 @@ if (__DEV__) {
 // Creates a new empty Cache instance with a ref-count of 0. The caller is responsible
 // for retaining the cache once it is in use (retainCache), and releasing the cache
 // once it is no longer needed (releaseCache).
+/**
+ * 创建新的空 Cache 实例
+ * @returns 
+ */
 export function createCache(): Cache {
   return {
-    controller: new AbortControllerLocal(),
-    data: new Map(),
-    refCount: 0,
+    controller: new AbortControllerLocal(), // // 中止控制器
+    data: new Map(), // 存储缓存数据
+    refCount: 0, // 引用计数，初始为 0
   };
 }
 
+/**
+ * 增加缓存的引用计数，防止被 GC 回收
+ * @param {*} cache 
+ */
 export function retainCache(cache: Cache) {
   if (__DEV__) {
+    // 检查是否已释放
     if (cache.controller.signal.aborted) {
       console.warn(
         'A cache instance was retained after it was already freed. ' +
@@ -96,13 +105,20 @@ export function retainCache(cache: Cache) {
       );
     }
   }
+  // 增加缓存的引用计数，防止被 GC 回收
   cache.refCount++;
 }
 
 // Cleanup a cache instance, potentially freeing it if there are no more references
+/**
+ * 减少缓存的引用计数，归零时释放缓存
+ * @param {*} cache 
+ */
 export function releaseCache(cache: Cache) {
+  // 减少引用计数
   cache.refCount--;
   if (__DEV__) {
+    // 检查是否过度释放
     if (cache.refCount < 0) {
       console.warn(
         'A cache instance was released after it was already freed. ' +
@@ -110,8 +126,11 @@ export function releaseCache(cache: Cache) {
       );
     }
   }
+  // 引用归零，调度中止
   if (cache.refCount === 0) {
+    // 调度低优先级任务
     scheduleCallback(NormalPriority, () => {
+      // 调用 abort() 中止相关请求
       cache.controller.abort();
     });
   }

@@ -70,6 +70,9 @@ export const enableLegacyFBSupport: boolean = false;
 export const enableYieldingBeforePassive: boolean = false;
 
 // Experiment to intentionally yield less to block high framerate animations.
+// 控制工作循环的调度方式
+// false: 使用 Scheduler.yield() 控制让出  
+// true:  使用时间阈值 (25ms/5ms) 控制让出      
 export const enableThrottledScheduling: boolean = false;
 
 export const enableLegacyCache = __EXPERIMENTAL__;

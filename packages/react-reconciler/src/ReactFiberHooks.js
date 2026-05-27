@@ -630,76 +630,92 @@ export function renderWithHooks<Props, SecondArg>(
   return children;
 }
 
+/**
+ * 完成渲染阶段，重置 hooks 状态和全局变量
+ * @param {*} current 
+ * @param {*} workInProgress 
+ * @param {*} Component 
+ */
 function finishRenderingHooks<Props, SecondArg>(
   current: Fiber | null,
   workInProgress: Fiber,
   Component: (p: Props, arg: SecondArg) => any,
 ): void {
-  if (__DEV__) {
-    workInProgress._debugHookTypes = hookTypesDev;
-    // Stash the thenable state for use by DevTools.
-    if (workInProgress.dependencies === null) {
-      if (thenableState !== null) {
-        workInProgress.dependencies = {
-          lanes: NoLanes,
-          firstContext: null,
-          _debugThenableState: thenableState,
-        };
-      }
-    } else {
-      workInProgress.dependencies._debugThenableState = thenableState;
-    }
-  }
+  // if (__DEV__) {
+  //   workInProgress._debugHookTypes = hookTypesDev;
+  //   // Stash the thenable state for use by DevTools.
+  //   if (workInProgress.dependencies === null) {
+  //     if (thenableState !== null) {
+  //       workInProgress.dependencies = {
+  //         lanes: NoLanes,
+  //         firstContext: null,
+  //         _debugThenableState: thenableState,
+  //       };
+  //     }
+  //   } else {
+  //     workInProgress.dependencies._debugThenableState = thenableState;
+  //   }
+  // }
 
   // We can assume the previous dispatcher is always this one, since we set it
   // at the beginning of the render phase and there's no re-entrance.
+  // 重置 dispatcher 为空操作
+  // 渲染完成后，必须将其还原为 ContextOnlyDispatcher，
+  // 这样在非渲染阶段（如事件处理、useEffect 等）调用 Hook API 时会抛出错误（因为 Hook 只能在函数组件顶层调用）
   ReactSharedInternals.H = ContextOnlyDispatcher;
 
   // This check uses currentHook so that it works the same in DEV and prod bundles.
   // hookTypesDev could catch more cases (e.g. context) but only in DEV bundles.
+  // 检查 hooks 数量是否正确
   const didRenderTooFewHooks =
     currentHook !== null && currentHook.next !== null;
 
+  // 重置渲染变量
   renderLanes = NoLanes;
   currentlyRenderingFiber = (null: any);
 
   currentHook = null;
   workInProgressHook = null;
 
-  if (__DEV__) {
-    currentHookNameInDev = null;
-    hookTypesDev = null;
-    hookTypesUpdateIndexDev = -1;
+  // if (__DEV__) {
+  //   currentHookNameInDev = null;
+  //   hookTypesDev = null;
+  //   hookTypesUpdateIndexDev = -1;
 
-    // Confirm that a static flag was not added or removed since the last
-    // render. If this fires, it suggests that we incorrectly reset the static
-    // flags in some other part of the codebase. This has happened before, for
-    // example, in the SuspenseList implementation.
-    if (
-      current !== null &&
-      (current.flags & StaticMaskEffect) !==
-        (workInProgress.flags & StaticMaskEffect) &&
-      // Disable this warning in legacy mode, because legacy Suspense is weird
-      // and creates false positives. To make this work in legacy mode, we'd
-      // need to mark fibers that commit in an incomplete state, somehow. For
-      // now I'll disable the warning that most of the bugs that would trigger
-      // it are either exclusive to concurrent mode or exist in both.
-      (disableLegacyMode || (current.mode & ConcurrentMode) !== NoMode)
-    ) {
-      console.error(
-        'Internal React error: Expected static flag was missing. Please ' +
-          'notify the React team.',
-      );
-    }
-  }
+  //   // Confirm that a static flag was not added or removed since the last
+  //   // render. If this fires, it suggests that we incorrectly reset the static
+  //   // flags in some other part of the codebase. This has happened before, for
+  //   // example, in the SuspenseList implementation.
+  //   if (
+  //     current !== null &&
+  //     (current.flags & StaticMaskEffect) !==
+  //       (workInProgress.flags & StaticMaskEffect) &&
+  //     // Disable this warning in legacy mode, because legacy Suspense is weird
+  //     // and creates false positives. To make this work in legacy mode, we'd
+  //     // need to mark fibers that commit in an incomplete state, somehow. For
+  //     // now I'll disable the warning that most of the bugs that would trigger
+  //     // it are either exclusive to concurrent mode or exist in both.
+  //     (disableLegacyMode || (current.mode & ConcurrentMode) !== NoMode)
+  //   ) {
+  //     console.error(
+  //       'Internal React error: Expected static flag was missing. Please ' +
+  //         'notify the React team.',
+  //     );
+  //   }
+  // }
 
+  // 重置渲染阶段更新标记
+  // 表示在渲染阶段是否发生了更新（
   didScheduleRenderPhaseUpdate = false;
   // This is reset by checkDidRenderIdHook
   // localIdCounter = 0;
 
+  // 重置 thenable 状态
+  // 用于跟踪通过 use 函数挂起的 thenable，也需要重置
   thenableIndexCounter = 0;
   thenableState = null;
 
+  // 抛出错误：hooks 数量不匹配
   if (didRenderTooFewHooks) {
     throw new Error(
       'Rendered fewer hooks than expected. This may be caused by an accidental ' +
@@ -707,15 +723,10 @@ function finishRenderingHooks<Props, SecondArg>(
     );
   }
 
+  // 检查 Context 变化（即使组件没有自己的更新）
   if (current !== null) {
     if (!checkIfWorkInProgressReceivedUpdate()) {
-      // If there were no changes to props or state, we need to check if there
-      // was a context change. We didn't already do this because there's no
-      // 1:1 correspondence between dependencies and hooks. Although, because
-      // there almost always is in the common case (`readContext` is an
-      // internal API), we could compare in there. OTOH, we only hit this case
-      // if everything else bails out, so on the whole it might be better to
-      // keep the comparison out of the common path.
+     
       const currentDependencies = current.dependencies;
       if (
         currentDependencies !== null &&
@@ -726,26 +737,30 @@ function finishRenderingHooks<Props, SecondArg>(
     }
   }
 
-  if (__DEV__) {
-    if (checkIfUseWrappedInTryCatch()) {
-      const componentName =
-        getComponentNameFromFiber(workInProgress) || 'Unknown';
-      if (
-        !didWarnAboutUseWrappedInTryCatch.has(componentName) &&
-        // This warning also fires if you suspend with `use` inside an
-        // async component. Since we warn for that above, we'll silence this
-        // second warning by checking here.
-        !didWarnAboutAsyncClientComponent.has(componentName)
-      ) {
-        didWarnAboutUseWrappedInTryCatch.add(componentName);
-        console.error(
-          '`use` was called from inside a try/catch block. This is not allowed ' +
-            'and can lead to unexpected behavior. To handle errors triggered ' +
-            'by `use`, wrap your component in a error boundary.',
-        );
-      }
-    }
-  }
+  // 开发环境：检测 use 是否被包裹在 try/catch 中
+  // use 是一个 Hook（类似 use API），它会在 Promise pending 时抛出该 Promise 来挂起渲染，
+  // 而 try/catch 会捕获这个异常，导致 React 无法正常处理 Suspense。
+  // 因此 React 会发出警告，建议使用 Error Boundary 而不是 try/catch。
+  // if (__DEV__) {
+  //   if (checkIfUseWrappedInTryCatch()) {
+  //     const componentName =
+  //       getComponentNameFromFiber(workInProgress) || 'Unknown';
+  //     if (
+  //       !didWarnAboutUseWrappedInTryCatch.has(componentName) &&
+  //       // This warning also fires if you suspend with `use` inside an
+  //       // async component. Since we warn for that above, we'll silence this
+  //       // second warning by checking here.
+  //       !didWarnAboutAsyncClientComponent.has(componentName)
+  //     ) {
+  //       didWarnAboutUseWrappedInTryCatch.add(componentName);
+  //       console.error(
+  //         '`use` was called from inside a try/catch block. This is not allowed ' +
+  //           'and can lead to unexpected behavior. To handle errors triggered ' +
+  //           'by `use`, wrap your component in a error boundary.',
+  //       );
+  //     }
+  //   }
+  // }
 }
 
 export function replaySuspendedComponentWithHooks<Props, SecondArg>(
@@ -755,24 +770,14 @@ export function replaySuspendedComponentWithHooks<Props, SecondArg>(
   props: Props,
   secondArg: SecondArg,
 ): any {
-  // This function is used to replay a component that previously suspended,
-  // after its data resolves.
-  //
-  // It's a simplified version of renderWithHooks, but it doesn't need to do
-  // most of the set up work because they weren't reset when we suspended; they
-  // only get reset when the component either completes (finishRenderingHooks)
-  // or unwinds (resetHooksOnUnwind).
-  if (__DEV__) {
-    hookTypesUpdateIndexDev = -1;
-    // Used for hot reloading:
-    ignorePreviousDependencies =
-      current !== null && current.type !== workInProgress.type;
-  }
-  // renderWithHooks only resets the updateQueue but does not clear it, since
-  // it needs to work for both this case (suspense replay) as well as for double
-  // renders in dev and setState-in-render. However, for the suspense replay case
-  // we need to reset the updateQueue to correctly handle unmount effects, so we
-  // clear the queue here
+ 
+  // if (__DEV__) {
+  //   hookTypesUpdateIndexDev = -1;
+  //   // Used for hot reloading:
+  //   ignorePreviousDependencies =
+  //     current !== null && current.type !== workInProgress.type;
+  // }
+ 
   workInProgress.updateQueue = null;
   const children = renderWithHooksAgain(
     workInProgress,
@@ -1108,13 +1113,21 @@ function resetFunctionComponentUpdateQueue(
   }
 }
 
+/**
+ * 将一个 thenable（如 Promise）与当前组件渲染关联起来，根据 thenable 的状态决定是返回结果、挂起渲染，还是触发错误边界
+ * @param {*} thenable 
+ * @returns 
+ */
 function useThenable<T>(thenable: Thenable<T>): T {
   // Track the position of the thenable within this fiber.
+  // 追踪 thenable 位置
   const index = thenableIndexCounter;
   thenableIndexCounter += 1;
   if (thenableState === null) {
-    thenableState = createThenableState();
+    // 创建 thenableState
+    thenableState = createThenableState(); // []
   }
+  // 跟踪 thenable
   const result = trackUsedThenable(thenableState, thenable, index);
 
   // When something suspends with `use`, we replay the component with the
@@ -1139,6 +1152,7 @@ function useThenable<T>(thenable: Thenable<T>): T {
       : workInProgressHook.next;
 
   if (nextWorkInProgressHook !== null) {
+    // 仍有 hooks 待处理，保持 re-render dispatcher
     // There are still hooks remaining from the previous attempt.
   } else {
     // There are no remaining hooks from the previous attempt. We're no longer
@@ -1155,6 +1169,7 @@ function useThenable<T>(thenable: Thenable<T>): T {
         ReactSharedInternals.H = HooksDispatcherOnMountInDEV;
       }
     } else {
+      // 无剩余 hooks，恢复 mount/update dispatcher
       ReactSharedInternals.H =
         currentFiber === null || currentFiber.memoizedState === null
           ? HooksDispatcherOnMount
@@ -1164,19 +1179,30 @@ function useThenable<T>(thenable: Thenable<T>): T {
   return result;
 }
 
+/**
+ * 统一处理 Promise 和 Context
+ * @param {*} usable  thenable 或 Context
+ * @returns 
+ */
 function use<T>(usable: Usable<T>): T {
+
+   
   if (usable !== null && typeof usable === 'object') {
     // $FlowFixMe[method-unbinding]
+    // Thenable / Promise
     if (typeof usable.then === 'function') {
       // This is a thenable.
       const thenable: Thenable<T> = (usable: any);
       return useThenable(thenable);
+
+    // Context
     } else if (usable.$$typeof === REACT_CONTEXT_TYPE) {
       const context: ReactContext<T> = (usable: any);
       return readContext(context);
     }
   }
 
+  // 不支持的类型
   // eslint-disable-next-line react-internal/safe-string-coercion
   throw new Error('An unsupported type was passed to use(): ' + String(usable));
 }
@@ -1340,11 +1366,10 @@ function updateReducer<S, I, A>(
 }
 
 /**
- * 遍历更新队列，根据优先级过滤更新，计算最终状态
+ * 处理 update 队列，计算新状态，跳过低优先级更新
+ * @param {*} hook 当前 hook 实例
+ * @param {*} current 上一次 hook
  * @param {*} reducer 
- * @param {*} initialArg 
- * @param {*} init 
- * @param {*} S 
  * @returns 
  */
 function updateReducerImpl<S, A>(
@@ -1352,6 +1377,7 @@ function updateReducerImpl<S, A>(
   current: Hook,
   reducer: (S, A) => S,
 ): [S, Dispatch<A>] {
+
   const queue = hook.queue;
 
   // 如果 queue 为空，说明 hooks 被条件调用
@@ -1362,19 +1388,15 @@ function updateReducerImpl<S, A>(
     );
   }
 
+  // 1、合并 pending 队列到 base 队列
   queue.lastRenderedReducer = reducer;
 
-  // The last rebase update that is NOT part of the base state.
   let baseQueue = hook.baseQueue;
 
-  // The last pending update that hasn't been processed yet.
-  // 将 pending 队列合并到 base 队列
-  const pendingQueue = queue.pending; // 获取当前 hook 的更新队列（queue.pending）
+  const pendingQueue = queue.pending; // queue.pending 是尚未处理的更新链表
   if (pendingQueue !== null) {
-    // We have new updates that haven't been processed yet.
-    // We'll add them to the base queue.
+   
     if (baseQueue !== null) {
-      // Merge the pending queue and the base queue.
       const baseFirst = baseQueue.next;
       const pendingFirst = pendingQueue.next;
       baseQueue.next = pendingFirst;
@@ -1391,79 +1413,81 @@ function updateReducerImpl<S, A>(
     //   }
     // }
     current.baseQueue = baseQueue = pendingQueue;
+    // 最后将 queue.pending 清空，表示所有待处理更新都已进入 base 队列
     queue.pending = null;
   }
 
   const baseState = hook.baseState;
+  // 2. 无更新则直接返回
   if (baseQueue === null) {
-    // If there are no pending updates, then the memoized state should be the
-    // same as the base state. Currently these only diverge in the case of
-    // useOptimistic, because useOptimistic accepts a new baseState on
-    // every render.
+    // 如果没有需要处理的更新（baseQueue === null），则直接返回当前的 baseState 作为新状态，无需重新计算。
     hook.memoizedState = baseState;
-    // We don't need to call markWorkInProgressReceivedUpdate because
-    // baseState is derived from other reactive values.
+
+    // 3. 遍历更新队列
   } else {
     // We have a queue to process.
-    const first = baseQueue.next;
-    let newState = baseState;
+    const first = baseQueue.next; // first 是环形链表中的第一个更新节点
+    let newState = baseState; // newState 累积计算出的最新状态
 
+    // 构建新的 base 队列（即本次因为优先级不足而跳过的更新）
     let newBaseState = null;
     let newBaseQueueFirst = null;
     let newBaseQueueLast: Update<S, A> | null = null;
+
+
     let update = first;
+
+    // 标记是否遇到了某个与异步 action 纠缠的更新
     let didReadFromEntangledAsyncAction = false;
 
     // 更新队列处理
     do {
-      // An extra OffscreenLane bit is added to updates that were made to
-      // a hidden tree, so that we can distinguish them from updates that were
-      // already there when the tree was hidden.
       // 通过位运算移除 OffscreenLane 标记，得到"纯净"的更新优先级
       const updateLane = removeLanes(update.lane, OffscreenLane);
       // 检查是否为隐藏树更新
       const isHiddenUpdate = updateLane !== update.lane;
 
-      // Check if this update was made while the tree was hidden. If so, then
-      // it's not a "base" update and we should disregard the extra base lanes
-      // that were added to renderLanes when we entered the Offscreen tree.
+      // 跳过意味着本次渲染来不及处理这个低优先级的更新，需要保留到下次
       let shouldSkipUpdate = isHiddenUpdate
       // 优先级过滤：只处理当前渲染优先级内的更新
         ? !isSubsetOfLanes(getWorkInProgressRootRenderLanes(), updateLane)
         // Offscreen 支持：隐藏树使用不同的渲染 lanes
         : !isSubsetOfLanes(renderLanes, updateLane);
 
-      // 手势更新处理
+      // 3-1 手势更新处理
       if (enableGestureTransition && updateLane === GestureLane) {
-        // This is a gesture optimistic update. It should only be considered as part of the
-        // rendered state while rendering the gesture lane and if the rendering the associated
-        // ScheduledGesture.
         const scheduledGesture = update.gesture;
         if (scheduledGesture !== null) {
+          // 情况1：手势已取消
+          // 手势已被取消，其产生的更新不再需要
           if (scheduledGesture.count === 0 && !scheduledGesture.committing) {
-            // This gesture has already been cancelled. We can clean up this update.
+            // 跳过该更新，并继续处理下一个
             update = update.next;
             continue;
+            // 情况2：当前渲染不是手势渲染 → 优先级不足，跳过
+            // 当前渲染的 lanes 不包含手势车道，说明现在是普通渲染，不应处理手势更新
           } else if (!isGestureRender(renderLanes)) {
+            // 本次渲染因优先级不足而跳过该更新（保留到下次）
             shouldSkipUpdate = true;
           } else {
+            // 情况3：当前渲染是手势渲染，但正在渲染的手势不是这个更新所属的手势 → 跳过
             const root: FiberRoot | null = getWorkInProgressRoot();
             if (root === null) {
               throw new Error(
                 'Expected a work-in-progress root. This is a bug in React. Please file an issue.',
               );
             }
-            // We assume that the currently rendering gesture is the one first in the queue.
+            // 当前正在渲染的手势（root.pendingGestures）与这个更新所关联的手势不是同一个，说明它不属于当前活动手势
+            // 跳过该更新（保留到下次）
             shouldSkipUpdate = root.pendingGestures !== scheduledGesture;
           }
         }
       }
 
-      // 跳过更新处理
+      // 3-2跳过更新处理
       if (shouldSkipUpdate) {
-        // Priority is insufficient. Skip this update. If this is the first
-        // skipped update, the previous update/state is the new base
-        // update/state.
+        // 对于被跳过的更新，将其克隆并添加到 新的 base 队列 中
+        // 创建一个新的 Update 对象，复制原更新的所有关键字段
         const clone: Update<S, A> = {
           lane: updateLane,
           revertLane: update.revertLane,
@@ -1471,40 +1495,43 @@ function updateReducerImpl<S, A>(
           action: update.action,
           hasEagerState: update.hasEagerState,
           eagerState: update.eagerState,
-          next: (null: any),
+          next: (null: any), // 注意 next 暂时为 null
         };
+        // 如果 newBaseQueueLast 为 null（即这是第一个被跳过的更新）
         if (newBaseQueueLast === null) {
+          // 初始化 newBaseQueueFirst 和 newBaseQueueLast 指向该克隆
           newBaseQueueFirst = newBaseQueueLast = clone;
           newBaseState = newState;
         } else {
+          // 将克隆追加到 newBaseQueueLast.next，并更新 newBaseQueueLast
           newBaseQueueLast = newBaseQueueLast.next = clone;
         }
-        // Update the remaining priority in the queue.
-        // TODO: Don't need to accumulate this. Instead, we can remove
-        // renderLanes from the original lanes.
+   
+        // 同时将 updateLane 合并到 currentlyRenderingFiber.lanes 中，表示当前 Fiber 上还有未完成的工作。
         currentlyRenderingFiber.lanes = mergeLanes(
           currentlyRenderingFiber.lanes,
           updateLane,
         );
-        markSkippedUpdateLanes(updateLane);
+        markSkippedUpdateLanes(updateLane); // 记录被跳过的车道
       } else {
-        // 乐观更新处理
-        // This update does have sufficient priority.
+        // 3-3  表示当前更新的优先级足够，需要应用它
 
-        // Check if this is an optimistic update.
         const revertLane = update.revertLane;
+
+        // 普通更新
         if (revertLane === NoLane) {
-          // This is not an optimistic update, and we're going to apply it now.
-          // But, if there were earlier updates that were skipped, we need to
-          // leave this update in the queue so it can be rebased later.
           if (newBaseQueueLast !== null) {
+            /**
+             * 为什么已处理的更新还要加入 base 队列？
+             * 因为队列中可能存在顺序依赖：如果之前的更新被跳过了，
+             * 那么当前更新虽然本次被应用，但后续若再次渲染（例如要回滚或 rebase），仍然需要知道这个更新存在。
+             * 加入 base 队列可以保持完整的更新历史，便于未来可能出现的状态重新计算（如乐观更新回滚时）。
+             */
+            // 如果之前已经有跳过的更新（即 newBaseQueueLast !== null），则需要将该更新也克隆并添加到新的 base 队列中
             const clone: Update<S, A> = {
-              // This update is going to be committed so we never want uncommit
-              // it. Using NoLane works because 0 is a subset of all bitmasks, so
-              // this will never be skipped by the check above.
-              lane: NoLane,
-              revertLane: NoLane,
-              gesture: null,
+              lane: NoLane, // 表示该更新已处理完毕，不应再被优先级检查阻塞
+              revertLane: NoLane, // 清空
+              gesture: null, // 清空手势信息
               action: update.action,
               hasEagerState: update.hasEagerState,
               eagerState: update.eagerState,
@@ -1513,40 +1540,28 @@ function updateReducerImpl<S, A>(
             newBaseQueueLast = newBaseQueueLast.next = clone;
           }
 
-          // Check if this update is part of a pending async action. If so,
-          // we'll need to suspend until the action has finished, so that it's
-          // batched together with future updates in the same action.
+          // 该更新属于某个正在进行的异步 action
           if (updateLane === peekEntangledActionLane()) {
-            didReadFromEntangledAsyncAction = true;
+            didReadFromEntangledAsyncAction = true; // 标记 异步 action
           }
         } else {
-          // This is an optimistic update. If the "revert" priority is
-          // sufficient, don't apply the update. Otherwise, apply the update,
-          // but leave it in the queue so it can be either reverted or
-          // rebased in a subsequent render.
+          // 乐观更新与某个过渡（transition）或手势关联，有一个“回滚车道” revertLane
+      
+          // revertLane 的优先级在当前渲染中足够
+          // 表示该乐观更新所对应的过渡已经完成，因此这个乐观更新应该被忽略
           if (isSubsetOfLanes(renderLanes, revertLane)) {
-            // The transition that this optimistic update is associated with
-            // has finished. Pretend the update doesn't exist by skipping
-            // over it.
             update = update.next;
-
-            // Check if this update is part of a pending async action. If so,
-            // we'll need to suspend until the action has finished, so that it's
-            // batched together with future updates in the same action.
+            // 检测是否涉及异步 action 纠缠
             if (revertLane === peekEntangledActionLane()) {
               didReadFromEntangledAsyncAction = true;
             }
+            // 跳过该更新，不进行状态计算
             continue;
           } else {
+            // revertLane 优先级不足（过渡尚未完成）
+            // 需要保留到 base 队列中以便将来可能回滚或 rebase
             const clone: Update<S, A> = {
-              // Once we commit an optimistic update, we shouldn't uncommit it
-              // until the transition it is associated with has finished
-              // (represented by revertLane). Using NoLane here works because 0
-              // is a subset of all bitmasks, so this will never be skipped by
-              // the check above.
               lane: NoLane,
-              // Reuse the same revertLane so we know when the transition
-              // has finished.
               revertLane: update.revertLane,
               gesture: null, // If it commits, it's no longer a gesture update.
               action: update.action,
@@ -1560,14 +1575,12 @@ function updateReducerImpl<S, A>(
             } else {
               newBaseQueueLast = newBaseQueueLast.next = clone;
             }
-            // Update the remaining priority in the queue.
-            // TODO: Don't need to accumulate this. Instead, we can remove
-            // renderLanes from the original lanes.
+            // 同时将 revertLane 合并到 currentlyRenderingFiber.lanes 中，表示当前 Fiber 上还有未完成的工作。
             currentlyRenderingFiber.lanes = mergeLanes(
               currentlyRenderingFiber.lanes,
               revertLane,
             );
-            markSkippedUpdateLanes(revertLane);
+            markSkippedUpdateLanes(revertLane); // 记录被跳过的车道
           }
         }
 
@@ -1581,8 +1594,6 @@ function updateReducerImpl<S, A>(
         }
         if (update.hasEagerState) {
           // Eager State：使用预先计算的状态（如果有）
-          // If this update is a state update (not a reducer) and was processed eagerly,
-          // we can use the eagerly computed state
           newState = ((update.eagerState: any): S);
         } else {
           // 状态计算：调用 reducer 计算新状态
@@ -1592,29 +1603,29 @@ function updateReducerImpl<S, A>(
       update = update.next;
     } while (update !== null && update !== first);
 
+    // 新 base queue
     if (newBaseQueueLast === null) {
       newBaseState = newState;
     } else {
       newBaseQueueLast.next = (newBaseQueueFirst: any);
     }
 
-    // Mark that the fiber performed work, but only if the new state is
-    // different from the current state.
+    // 比较新旧状态是否相等
     if (!is(newState, hook.memoizedState)) {
-      markWorkInProgressReceivedUpdate();
+      // 状态发生改变
 
-      // Check if this update is part of a pending async action. If so, we'll
-      // need to suspend until the action has finished, so that it's batched
-      // together with future updates in the same action.
-      // TODO: Once we support hooks inside useMemo (or an equivalent
-      // memoization boundary like Forget), hoist this logic so that it only
-      // suspends if the memo boundary produces a new value.
+      markWorkInProgressReceivedUpdate(); // 标记当前 Fiber 收到了更新
+
+      // 异步 action 纠缠处理
       if (didReadFromEntangledAsyncAction) {
         const entangledActionThenable = peekEntangledActionThenable();
+        /**
+         * 抛出 thenable 的目的？
+         * 当组件在 reducer 中（或通过其他方式）读取了一个尚未完成的异步 action 的结果（例如与 use API 或某个 pending 的 Promise 关联），
+         * React 会通过抛出 thenable 来挂起当前渲染，并在 Promise 完成后重新尝试渲染
+         */
         if (entangledActionThenable !== null) {
-          // TODO: Instead of the throwing the thenable directly, throw a
-          // special object like `use` does so we can detect if it's captured
-          // by userspace.
+          // 抛出该 thenable
           throw entangledActionThenable;
         }
       }
@@ -1629,8 +1640,6 @@ function updateReducerImpl<S, A>(
   }
 
   if (baseQueue === null) {
-    // `queue.lanes` is used for entangling transitions. We can set it back to
-    // zero once the queue is empty.
     queue.lanes = NoLanes;
   }
 
@@ -2159,6 +2168,15 @@ type ActionStateQueueNode<S, P> = {
   listeners: Array<() => void>,
 };
 
+/**
+ * 派发 action 状态更新，管理 action 队列和 pending 状态
+ * @param {*} fiber 
+ * @param {*} actionQueue 
+ * @param {*} setPendingState 乐观更新 pending 状态
+ * @param {*} setState 更新状态
+ * @param {*} payload 
+ * @returns 
+ */
 function dispatchActionState<S, P>(
   fiber: Fiber,
   actionQueue: ActionStateQueue<S, P>,
@@ -2166,6 +2184,7 @@ function dispatchActionState<S, P>(
   setState: Dispatch<ActionStateQueueNode<S, P>>,
   payload: P,
 ): void {
+  // 不能在渲染阶段更新 action状态
   if (isRenderPhaseUpdate(fiber)) {
     throw new Error('Cannot update action state while rendering.');
   }
@@ -2173,9 +2192,11 @@ function dispatchActionState<S, P>(
   const currentAction = actionQueue.action;
   if (currentAction === null) {
     // An earlier action errored. Subsequent actions should not run.
+    // 之前的 action 失败了，跳过
     return;
   }
 
+  // 创建 actionNode (thenable)
   const actionNode: ActionStateQueueNode<S, P> = {
     payload,
     action: currentAction,
@@ -2200,6 +2221,7 @@ function dispatchActionState<S, P>(
   // transition context when the action is run.
   const prevTransition = ReactSharedInternals.T;
   if (prevTransition !== null) {
+    // 乐观更新 pending 状态
     // Optimistically update the pending state, similar to useTransition.
     // This will be reverted automatically when all actions are finished.
     setPendingState(true);
@@ -2208,24 +2230,36 @@ function dispatchActionState<S, P>(
     setState(actionNode);
   } else {
     // This is not a transition.
-    actionNode.isTransition = false;
+    actionNode.isTransition = false; // 
     setState(actionNode);
   }
 
-  const last = actionQueue.pending;
+  //  加入队列或立即执行
+  const last = actionQueue.pending; // actionQueue.pending 指向环形链表的最后一个节点
+
+  // 队列为空
   if (last === null) {
+    // 第一个 action，立即执行
     // There are no pending actions; this is the first one. We can run
     // it immediately.
     actionNode.next = actionQueue.pending = actionNode;
     runActionStateAction(actionQueue, actionNode);
   } else {
+    // 注意：此时不会立即执行，等待当前正在执行的动作完成后，会自动从队列中取出下一个执行
     // There's already an action running. Add to the queue.
+    // 已有 action 在执行，加入队列
     const first = last.next;
     actionNode.next = first;
+    // 将新节点插入到链表尾部
     actionQueue.pending = last.next = actionNode;
   }
 }
 
+/**
+ * 执行 action 函数，处理返回值和错误
+ * @param {*} actionQueue action 队列
+ * @param {*} node 要执行的动作节点
+ */
 function runActionStateAction<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   node: ActionStateQueueNode<S, P>,
@@ -2240,6 +2274,7 @@ function runActionStateAction<S, P>(
   const payload = node.payload;
   const prevState = actionQueue.state;
 
+  // Transition 路径 
   if (node.isTransition) {
     // The original dispatch was part of a transition. We restore its
     // transition context here.
@@ -2247,6 +2282,7 @@ function runActionStateAction<S, P>(
     // This is a fork of startTransition
     const prevTransition = ReactSharedInternals.T;
     const currentTransition: Transition = ({}: any);
+    // 设置 View Transition 类型
     if (enableViewTransition) {
       currentTransition.types =
         prevTransition !== null
@@ -2258,23 +2294,29 @@ function runActionStateAction<S, P>(
             prevTransition.types
           : null;
     }
+    // 设置 Gesture Transition 类型
     if (enableGestureTransition) {
       currentTransition.gesture = null;
     }
+    // 设置 Transition 名称和开始时间
     if (enableTransitionTracing) {
       currentTransition.name = null;
       currentTransition.startTime = -1;
     }
-    if (__DEV__) {
-      currentTransition._updatedFibers = new Set();
-    }
+    // if (__DEV__) {
+    //   currentTransition._updatedFibers = new Set();
+    // }
     ReactSharedInternals.T = currentTransition;
     try {
+      // 执行 action 函数
       const returnValue = action(prevState, payload);
+
+      // 通知调度器
       const onStartTransitionFinish = ReactSharedInternals.S;
       if (onStartTransitionFinish !== null) {
         onStartTransitionFinish(currentTransition, returnValue);
       }
+      // 处理返回值
       handleActionReturnValue(actionQueue, node, returnValue);
     } catch (error) {
       onActionError(actionQueue, node, error);
@@ -2282,36 +2324,36 @@ function runActionStateAction<S, P>(
       if (prevTransition !== null && currentTransition.types !== null) {
         // If we created a new types set in the inner transition, we transfer it to the parent
         // since they should share the same set. They're conceptually entangled.
-        if (__DEV__) {
-          if (
-            prevTransition.types !== null &&
-            prevTransition.types !== currentTransition.types
-          ) {
-            // Just assert that assumption holds that we're not overriding anything.
-            console.error(
-              'We expected inner Transitions to have transferred the outer types set and ' +
-                'that you cannot add to the outer Transition while inside the inner.' +
-                'This is a bug in React.',
-            );
-          }
-        }
+        // if (__DEV__) {
+        //   if (
+        //     prevTransition.types !== null &&
+        //     prevTransition.types !== currentTransition.types
+        //   ) {
+        //     // Just assert that assumption holds that we're not overriding anything.
+        //     console.error(
+        //       'We expected inner Transitions to have transferred the outer types set and ' +
+        //         'that you cannot add to the outer Transition while inside the inner.' +
+        //         'This is a bug in React.',
+        //     );
+        //   }
+        // }
         prevTransition.types = currentTransition.types;
       }
       ReactSharedInternals.T = prevTransition;
 
-      if (__DEV__) {
-        if (prevTransition === null && currentTransition._updatedFibers) {
-          const updatedFibersCount = currentTransition._updatedFibers.size;
-          currentTransition._updatedFibers.clear();
-          if (updatedFibersCount > 10) {
-            console.warn(
-              'Detected a large number of updates inside startTransition. ' +
-                'If this is due to a subscription please re-write it to use React provided hooks. ' +
-                'Otherwise concurrent mode guarantees are off the table.',
-            );
-          }
-        }
-      }
+      // if (__DEV__) {
+      //   if (prevTransition === null && currentTransition._updatedFibers) {
+      //     const updatedFibersCount = currentTransition._updatedFibers.size;
+      //     currentTransition._updatedFibers.clear();
+      //     if (updatedFibersCount > 10) {
+      //       console.warn(
+      //         'Detected a large number of updates inside startTransition. ' +
+      //           'If this is due to a subscription please re-write it to use React provided hooks. ' +
+      //           'Otherwise concurrent mode guarantees are off the table.',
+      //       );
+      //     }
+      //   }
+      // }
     }
   } else {
     // The original dispatch was not part of a transition.
@@ -2324,11 +2366,19 @@ function runActionStateAction<S, P>(
   }
 }
 
+/**
+ * 处理 action 函数的返回值，判断是同步还是异步，更新状态
+ * @param {*} actionQueue action 队列
+ * @param {*} node 动作节点
+ * @param {*} returnValue action 返回值
+ */
 function handleActionReturnValue<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   node: ActionStateQueueNode<S, P>,
   returnValue: mixed,
 ) {
+
+  // 异步路径
   if (
     returnValue !== null &&
     typeof returnValue === 'object' &&
@@ -2343,6 +2393,7 @@ function handleActionReturnValue<S, P>(
     }
     // Attach a listener to read the return state of the action. As soon as
     // this resolves, we can run the next action in the sequence.
+     // 监听 Promise 完成
     thenable.then(
       (nextState: Awaited<S>) => {
         onActionSuccess(actionQueue, node, nextState);
@@ -2361,20 +2412,27 @@ function handleActionReturnValue<S, P>(
       }
     }
   } else {
+    // 监听 Promise 完成
     const nextState = ((returnValue: any): Awaited<S>);
     onActionSuccess(actionQueue, node, nextState);
   }
 }
 
+/**
+ * action 成功后更新状态、通知监听器、执行下一个 action
+ * @param {*} actionQueue 
+ * @param {*} actionNode 
+ * @param {*} nextState 
+ */
 function onActionSuccess<S, P>(
   actionQueue: ActionStateQueue<S, P>,
   actionNode: ActionStateQueueNode<S, P>,
   nextState: Awaited<S>,
 ) {
   // The action finished running.
-  actionNode.status = 'fulfilled';
-  actionNode.value = nextState;
-  notifyActionListeners(actionNode);
+  actionNode.status = 'fulfilled'; // 已完成
+  actionNode.value = nextState; // 结果
+  notifyActionListeners(actionNode); // 通知所有监听器
 
   actionQueue.state = nextState;
 
@@ -2408,9 +2466,9 @@ function onActionError<S, P>(
   if (last !== null) {
     const first = last.next;
     do {
-      actionNode.status = 'rejected';
-      actionNode.reason = error;
-      notifyActionListeners(actionNode);
+      actionNode.status = 'rejected'; // 已拒绝
+      actionNode.reason = error; // 拒绝原因
+      notifyActionListeners(actionNode); // 通知所有监听器
       actionNode = actionNode.next;
     } while (actionNode !== first);
   }
@@ -2434,12 +2492,19 @@ function actionStateReducer<S>(oldState: S, newState: S): S {
   return newState;
 }
 
+/**
+ * 挂载 useActionState hook，创建状态、action queue 和 pending state
+ * @param {*} action 
+ * @param {*} P 
+ */
 function mountActionState<S, P>(
   action: (Awaited<S>, P) => S,
   initialStateProp: Awaited<S>,
   permalink?: string,
 ): [Awaited<S>, (P) => void, boolean] {
   let initialState: Awaited<S> = initialStateProp;
+
+  // 处理 hydration 状态    
   if (getIsHydrating()) {
     const root: FiberRoot = (getWorkInProgressRoot(): any);
     const ssrFormState = root.formState;
@@ -2458,6 +2523,8 @@ function mountActionState<S, P>(
 
   // State hook. The state is stored in a thenable which is then unwrapped by
   // the `use` algorithm during render.
+  // 第一个 hook 存储 action 当前状态值的
+  // 创建 state hook  , fiber.memoizedState存储 hook 链表
   const stateHook = mountWorkInProgressHook();
   stateHook.memoizedState = stateHook.baseState = initialState;
   // TODO: Typing this "correctly" results in recursion limit errors
@@ -2470,20 +2537,25 @@ function mountActionState<S, P>(
     lastRenderedState: initialState,
   };
   stateHook.queue = stateQueue;
+
   const setState: Dispatch<S | Awaited<S>> = (dispatchSetState.bind(
     null,
     currentlyRenderingFiber,
     ((stateQueue: any): UpdateQueue<S | Awaited<S>, S | Awaited<S>>),
   ): any);
+
   stateQueue.dispatch = setState;
 
   // Pending state. This is used to store the pending state of the action.
   // Tracked optimistically, like a transition pending state.
+  // 第2个 hook 存储 action 当前 pending 状态值的
+  // 创建 pending state hook
   const pendingStateHook = mountStateImpl((false: Thenable<boolean> | boolean));
   const setPendingState: boolean => void = (dispatchOptimisticSetState.bind(
     null,
-    currentlyRenderingFiber,
+    currentlyRenderingFiber, // fiber
     false,
+    // 更新队列 pending 状态
     ((pendingStateHook.queue: any): UpdateQueue<
       S | Awaited<S>,
       S | Awaited<S>,
@@ -2494,6 +2566,7 @@ function mountActionState<S, P>(
   // shared between all instances of the hook. Similar to a regular state queue,
   // but different because the actions are run sequentially, and they run in
   // an event instead of during render.
+  // 创建 action  queue hook
   const actionQueueHook = mountWorkInProgressHook();
   const actionQueue: ActionStateQueue<S, P> = {
     state: initialState,
@@ -2504,10 +2577,10 @@ function mountActionState<S, P>(
   actionQueueHook.queue = actionQueue;
   const dispatch = (dispatchActionState: any).bind(
     null,
-    currentlyRenderingFiber,
-    actionQueue,
-    setPendingState,
-    setState,
+    currentlyRenderingFiber, // fiber
+    actionQueue, // action 更新队列 hook
+    setPendingState, // dispatchOptimisticSetState
+    setState, // dispatchSetState
   );
   actionQueue.dispatch = dispatch;
 
@@ -2516,6 +2589,7 @@ function mountActionState<S, P>(
   // an effect.
   actionQueueHook.memoizedState = action;
 
+  // 返回状态、dispatch函数和是否pending
   return [initialState, dispatch, false];
 }
 
@@ -2535,6 +2609,14 @@ function updateActionState<S, P>(
   );
 }
 
+/**
+ * 更新 useActionState hook，处理状态、pending、action 函数变化
+ * @param {*} stateHook 当前渲染的 hook
+ * @param {*} currentStateHook  当前的 hook
+ * @param {*} action action 函数
+ * @param {*} initialState 	初始状态
+ * @param {*} permalink 	permalink
+ */
 function updateActionStateImpl<S, P>(
   stateHook: Hook,
   currentStateHook: Hook,
@@ -2542,16 +2624,24 @@ function updateActionStateImpl<S, P>(
   initialState: Awaited<S>,
   permalink?: string,
 ): [Awaited<S>, (P) => void, boolean] {
+  // 更新 reducer 获取结果        
+  // updateReducerImpl 返回 [state, dispatch]
+  // actionResult 可以是：
+  // 1、普通值（同步 action 的返回值）
+  // 2、一个 Promise（异步 action 返回的 thenable，代表尚未完成）
   const [actionResult] = updateReducerImpl<S | Thenable<S>, S | Thenable<S>>(
     stateHook,
     currentStateHook,
-    actionStateReducer,
+    actionStateReducer, // 直接返回 newState
   );
 
+  // 更新 pending 状态 
   const [isPending] = updateState(false);
 
   // This will suspend until the action finishes.
   let state: Awaited<S>;
+
+  // 处理异步状态挂起    
   if (
     typeof actionResult === 'object' &&
     actionResult !== null &&
@@ -2564,6 +2654,7 @@ function updateActionStateImpl<S, P>(
       if (x === SuspenseException) {
         // If we Suspend here, mark this separately so that we can track this
         // as an Action in Profiling tools.
+        // 当挂起发生时，React 会抛出 SuspenseException
         throw SuspenseActionException;
       } else {
         throw x;
@@ -2579,11 +2670,13 @@ function updateActionStateImpl<S, P>(
 
   // Check if a new action was passed. If so, update it in an effect.
   const prevAction = actionQueueHook.memoizedState;
+  // 处理 action 函数变化     
   if (action !== prevAction) {
+    // 给当前 Fiber 打上 PassiveEffect 标记，并调度一个被动副作用
     currentlyRenderingFiber.flags |= PassiveEffect;
     pushSimpleEffect(
-      HookHasEffect | HookPassive,
-      createEffectInstance(),
+      HookHasEffect | HookPassive, // 1 ｜ 8 Hook 标记（如 HookHasEffect | HookPassive）
+      createEffectInstance(), // { destroy : undefined}
       actionStateActionEffect.bind(null, actionQueue, action),
       null,
     );
@@ -3852,6 +3945,12 @@ function dispatchReducerAction<S, A>(
   markUpdateInDevTools(fiber, lane, action);
 }
 
+/**
+ * 用于处理 useState 和 useReducer 返回的 dispatch 函数
+ * @param {*} fiber 当前组件对应的 Fiber 节点
+ * @param {*} queue 与该 Hook 关联的更新队列
+ * @param {*} action 用户传入的新状态值或 reducer action
+ */
 function dispatchSetState<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -3859,8 +3958,11 @@ function dispatchSetState<S, A>(
 ): void {
   if (__DEV__) {
     // using a reference to `arguments` bails out of GCC optimizations which affect function arity
+    // 在开发模式下，检查调用时是否传入了第三个参数（即 setState 的第二个参数）
     const args = arguments;
     if (typeof args[3] === 'function') {
+      // 旧版 React 类组件中 setState 支持的回调函数（setState(newState, callback)）。
+      // 但在 Hooks 中，useState 和 useReducer 返回的 setState 不支持第二个回调参数。
       console.error(
         "State updates from the useState() and useReducer() Hooks don't support the " +
           'second callback argument. To execute a side effect after ' +
@@ -3869,19 +3971,31 @@ function dispatchSetState<S, A>(
     }
   }
 
+  // 根据当前调用的上下文，返回一个合适的 lane（车道），表示这次更新的优先级。
   const lane = requestUpdateLane(fiber);
+
+  // 创建 Update 对象并将其入队的函数
   const didScheduleUpdate = dispatchSetStateInternal(
     fiber,
     queue,
     action,
     lane,
   );
+  // 是否成功调度了一个更新（即是否产生了新的更新任务）
   if (didScheduleUpdate) {
     startUpdateTimerByLane(lane, 'setState()', fiber);
   }
   markUpdateInDevTools(fiber, lane, action);
 }
 
+/**
+ * 创建一个 Update 对象，将其加入更新队列，并触发重新渲染调度
+ * @param {*} fiber 
+ * @param {*} queue 
+ * @param {*} action 
+ * @param {*} lane 
+ * @returns 
+ */
 function dispatchSetStateInternal<S, A>(
   fiber: Fiber,
   queue: UpdateQueue<S, A>,
@@ -3901,6 +4015,7 @@ function dispatchSetStateInternal<S, A>(
 
   // 1、渲染阶段更新，直接入队
   if (isRenderPhaseUpdate(fiber)) {
+    // 这类更新不能走常规的调度流程，而是被放入一个特殊的“渲染阶段更新队列”，并且会在当前渲染循环中同步处理
     enqueueRenderPhaseUpdate(queue, update);
   } else {
     // 2、提交阶段更新
@@ -3909,9 +4024,7 @@ function dispatchSetStateInternal<S, A>(
       fiber.lanes === NoLanes && // 当前 fiber 没有 车道优先级
       (alternate === null || alternate.lanes === NoLanes) // 交替更新也没有优先级
     ) {
-      // The queue is currently empty, which means we can eagerly compute the
-      // next state before entering the render phase. If the new state is the
-      // same as the current state, we may be able to bail out entirely.
+      // 当前没有其他待处理的更新，队列是“干净”的。此时可以安全地提前计算新状态
       // 计算状态值
       const lastRenderedReducer = queue.lastRenderedReducer; // 上一次渲染的 reducer
       if (lastRenderedReducer !== null) {
@@ -3924,43 +4037,40 @@ function dispatchSetStateInternal<S, A>(
           const currentState: S = (queue.lastRenderedState: any); // 上一次渲染的状态
           // 计算立即计算的状态
           const eagerState = lastRenderedReducer(currentState, action);
-          // Stash the eagerly computed state, and the reducer used to compute
-          // it, on the update object. If the reducer hasn't changed by the
-          // time we enter the render phase, then the eager state can be used
-          // without calling the reducer again.
           update.hasEagerState = true; // 标记有立即计算的状态
           update.eagerState = eagerState;
 
           // 如果立即计算的状态与当前状态相同，直接返回
           if (is(eagerState, currentState)) {
-            // Fast path. We can bail out without scheduling React to re-render.
-            // It's still possible that we'll need to rebase this update later,
-            // if the component re-renders for a different reason and by that
-            // time the reducer has changed.
-            // TODO: Do we still need to entangle transitions in this case?
+            // 表明状态没有变化，不需要触发重新渲染
             enqueueConcurrentHookUpdateAndEagerlyBailout(fiber, queue, update);
+            // 直接返回 false，不会调度更新
             return false;
           }
         } catch (error) {
           // Suppress the error. It will throw again in the render phase.
         } finally {
-          if (__DEV__) {
-            ReactSharedInternals.H = prevDispatcher;
-          }
+          // if (__DEV__) {
+          //   ReactSharedInternals.H = prevDispatcher;
+          // }
         }
       }
     }
 
     // 将更新加入 fiber 的更新队列
+    // 将 update 加入到 queue.pending 环形链表（
     const root = enqueueConcurrentHookUpdate(fiber, queue, update, lane);
     if (root !== null) {
       scheduleUpdateOnFiber(root, fiber, lane); // 调度 fiber 更新
       entangleTransitionUpdate(root, queue, lane);
+
+      // 更新已入队，并且成功调度了一次重新渲染
       return true;
     }
   }
 
 
+  // 没有触发重新渲染（要么是由于渲染阶段更新被特殊处理，要么是 eager 优化发现状态未变而提前退出）
   return false;
 }
 

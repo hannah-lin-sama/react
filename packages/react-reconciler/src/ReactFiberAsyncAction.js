@@ -138,6 +138,11 @@ function pingEngtangledActionScope() {
   }
 }
 
+/**
+ * 将 thenable 和结果值链接，返回新的 Thenable
+ * @param {*} thenable 
+ * @param {*} result 
+ */
 export function chainThenableValue<T>(
   thenable: Thenable<T>,
   result: T,
@@ -149,20 +154,24 @@ export function chainThenableValue<T>(
   // We don't technically require promise support on the client yet, hence this
   // extra code.
   const listeners = [];
+  // 创建新的 Thenable
   const thenableWithOverride: Thenable<T> = {
     status: 'pending',
     value: null,
     reason: null,
     then(resolve: T => mixed) {
+      // 收集 listeners   
       listeners.push(resolve);
     },
   };
+  // 监听原始 thenable
   thenable.then(
     (value: T) => {
       const fulfilledThenable: FulfilledThenable<T> =
         (thenableWithOverride: any);
-      fulfilledThenable.status = 'fulfilled';
-      fulfilledThenable.value = result;
+      fulfilledThenable.status = 'fulfilled'; // 已完成
+      fulfilledThenable.value = result; // 结果
+      // 通知所有监听器
       for (let i = 0; i < listeners.length; i++) {
         const listener = listeners[i];
         listener(result);
@@ -170,8 +179,9 @@ export function chainThenableValue<T>(
     },
     error => {
       const rejectedThenable: RejectedThenable<T> = (thenableWithOverride: any);
-      rejectedThenable.status = 'rejected';
-      rejectedThenable.reason = error;
+      rejectedThenable.status = 'rejected'; // 已拒绝
+      rejectedThenable.reason = error; // 错误
+      // 通知所有监听器
       for (let i = 0; i < listeners.length; i++) {
         const listener = listeners[i];
         // This is a perf hack where we call the `onFulfill` ping function

@@ -428,11 +428,22 @@ export function prepareForCommit(containerInfo: Container): Object | null {
   return activeInstance;
 }
 
+/**
+ * 为何需要在删除前触发blur事件？
+ * 浏览器不知道焦点元素被删除，可能导致 1、焦点状态不一致、2无法再次聚焦 3、accessibility问题
+ */
+
+/**
+ * 在 DOM 节点删除前触发 blur 事件
+ * @param {*} internalInstanceHandle 
+ */
 export function beforeActiveInstanceBlur(internalInstanceHandle: Object): void {
+  // 启用事件监听
   if (enableCreateEventHandleAPI) {
     ReactBrowserEventEmitterSetEnabled(true);
+    // 派发 beforeDetachedBlur 事件
     dispatchBeforeDetachedBlur(
-      (selectionInformation: any).focusedElem,
+      (selectionInformation: any).focusedElem, // 当前焦点元素
       internalInstanceHandle,
     );
     ReactBrowserEventEmitterSetEnabled(false);
@@ -447,9 +458,17 @@ export function afterActiveInstanceBlur(): void {
   }
 }
 
+/**
+ * 在提交完成后重置全局状态
+ * @param {*} containerInfo 
+ */
 export function resetAfterCommit(containerInfo: Container): void {
+  // 恢复选择状态
   restoreSelection(selectionInformation, containerInfo);
+  // 恢复事件监听状态
   ReactBrowserEventEmitterSetEnabled(eventsEnabled);
+
+  // 清理临时变量
   eventsEnabled = null;
   selectionInformation = null;
 }
@@ -881,6 +900,14 @@ function handleErrorInNextTick(error: any) {
 
 export const supportsMutation = true;
 
+/**
+ * 在挂载阶段执行 DOM 元素的布局 effect
+ * @param {*} domElement 
+ * @param {*} type 
+ * @param {*} newProps 
+ * @param {*} internalInstanceHandle 
+ * @returns 
+ */
 export function commitMount(
   domElement: Instance,
   type: string,
@@ -894,6 +921,7 @@ export function commitMount(
   // there are also other cases when this might happen (such as patching
   // up text content during hydration mismatch). So we'll check this again.
   switch (type) {
+    // autoFocus 处理
     case 'button':
     case 'input':
     case 'select':
@@ -916,7 +944,11 @@ export function commitMount(
       // only need to assign one. And Safari just never triggers a new load event which means this technique
       // is already a noop regardless of which properties are assigned. We should revisit if browsers update
       // this heuristic in the future.
+      // Chrome：src 或 srcSet 都会触发 load 事件
+      // Firefox：只设置 src 触发 load 事件
+      // Safari：不触发新的 load 事件
       if (newProps.src) {
+        // / 处理图片 src
         const src = (newProps: any).src;
         if (enableSrcObject && typeof src === 'object') {
           // For object src, we can't just set the src again to the same blob URL because it might have
@@ -1166,23 +1198,55 @@ export function isSingletonScope(type: string): boolean {
   return type === 'head';
 }
 
+/**
+ * 创建事件对象
+ * 为何使用 document.createEvent 方法创建事件对象,而不使用 Event 构造函数？
+ * 1、历史兼容性原因
+ * @param {*} type 
+ * @param {*} bubbles 
+ * @returns 
+ */
 function createEvent(type: DOMEventName, bubbles: boolean): Event {
+  // 创建一个标准的 DOM Event 对象
   const event = document.createEvent('Event');
+  // 初始化事件属性，包括事件类型、是否冒泡、是否可取消
   event.initEvent(((type: any): string), bubbles, false);
   return event;
 }
 
+/**
+ * 在焦点元素上派发 beforeblur 事件
+ * @param {*} target 当前焦点元素
+ * @param {*} internalInstanceHandle 当前 fiber 的实例句柄
+ */
 function dispatchBeforeDetachedBlur(
   target: HTMLElement,
   internalInstanceHandle: Object,
 ): void {
   if (enableCreateEventHandleAPI) {
+    // 创建 beforeblur 事件
+    /**
+     * 为何是 beforeBlur事件，而不是blur事件呢？
+     * 原因：在 DOM 删除前，焦点元素还没有真正失去焦点！
+     * 
+     * blur事件：DOM 已删除 → 元素已不在 DOM 中 → 很多操作无法执行  
+     * beforeBlur事件：DOM 即将删除 → 元素仍在 DOM 中 → 可以正常执行操作     
+     */
     const event = createEvent('beforeblur', true);
     // Dispatch "beforeblur" directly on the target,
     // so it gets picked up by the event system and
     // can propagate through the React internal tree.
     // $FlowFixMe[prop-missing]: internal field
+    // 记录当前焦点元素的实例句柄
+    // 在 blur 事件处理器中，如何知道是删除导致的 blur？    
     event._detachedInterceptFiber = internalInstanceHandle;
+    // 在目标元素触发 beforeblur 事件
+    /**
+     * 为什么要直接在 target 上派发？
+     * 1、直接在目标元素上派发，而不是 document
+     * 2、事件可以被 React 事件系统捕获
+     * 3、能够在 React 内部树中传播
+     */
     target.dispatchEvent(event);
   }
 }
@@ -2142,9 +2206,18 @@ function customizeViewTransitionError(
   return error;
 }
 
-/** @noinline */
+/**
+ * 为什么需要触发 reflow？
+ *  View Transition 中：  
+│  1. 浏览器需要在动画开始前捕获当前状态                         
+│  2. 如果 DOM 刚刚修改，布局可能还未计算                       
+│  3. 读取 layout 属性会强制计算布局 
+│  4. 确保捕获的状态是准确的 
+ */
+/** @noinline  强制浏览器触发布局计算（reflow） */
 function forceLayout(ownerDocument: Document) {
   // This function exists to trick minifiers to not remove this unused member expression.
+  // 读取 layout 属性
   return (ownerDocument.documentElement: any).clientHeight;
 }
 
@@ -2158,18 +2231,16 @@ function waitForImageToLoad(this: HTMLImageElement, resolve: () => void) {
 /**
  * startViewTransition 是 React View Transition API 的核心实现，
  * 负责将浏览器原生的 View Transition 与 React 的 commit 阶段集成，实现平滑的页面过渡动画。
- * @param {*} suspendedState 
- * @param {*} rootContainer 
- * @param {*} transitionTypes 
- * @param {*} mutationCallback 
- * @param {*} layoutCallback 
- * @param {*} afterMutationCallback 
- * @param {*} spawnedWorkCallback 
- * @param {*} passiveCallback 
- * @param {*} errorCallback 
- * @param {any} 
+ * @param {*} suspendedState 包含本次提交中尚未加载完的图片列表（suspenseyImages），用于决定是否等待图片加载
+ * @param {*} rootContainer 根 DOM 容器（如 document.body 或 div#root）
+ * @param {*} transitionTypes 过渡类型字符串数组，用于 CSS 选择 :active-view-transition-type()
+ * @param {*} mutationCallback 执行 DOM 增删改（Mutation 阶段）的函数
+ * @param {*} layoutCallback 执行布局副作用（Layout 阶段，如 useLayoutEffect）的函数
+ * @param {*} afterMutationCallback 在动画捕获新状态后，执行布局后工作的函数
+ * @param {*} spawnedWorkCallback 在动画准备就绪后，刷新衍生工作的函数
+ * @param {*} passiveCallback 在过渡完成（或跳过）后，刷新被动副作用（useEffect）的函数
+ * @param {*} errorCallback 动画过程中发生错误时的处理函数
  * @param {*} blockedCallback 
- * @param {any} 
  * @param {*} finishedAnimation 
  * @returns 
  */
@@ -2187,6 +2258,7 @@ export function startViewTransition(
   finishedAnimation: () => void, // Profiling-only
 ): null | RunningViewTransition {
 
+  // 获取 ownerDocument 并调用原生 API
   const ownerDocument: Document =
     rootContainer.nodeType === DOCUMENT_NODE
       ? (rootContainer: any)
@@ -2202,34 +2274,46 @@ export function startViewTransition(
         // mutations. That way we're not waiting on a navigation that we spawned
         // from this update. Only navigations that started before this commit.
         const ownerWindow = ownerDocument.defaultView;
+        // 检测当前是否有一个正在进行的浏览器导航
+        // 如果存在，则后续需要等待该导航完成，以免过渡动画与页面跳转冲突
         const pendingNavigation =
           ownerWindow.navigation && ownerWindow.navigation.transition;
+        // 记录执行 mutation 前的字体加载状态
         // $FlowFixMe[prop-missing]
         const previousFontLoadingStatus = ownerDocument.fonts.status;
-        // 执行 mutation
+        // 执行 mutation， DOM 增删改
         mutationCallback();
         const blockingPromises: Array<Promise<any>> = [];
         if (previousFontLoadingStatus === 'loaded') {
           // Force layout calculation to trigger font loading.
+          // 强制布局，触发字体加载
           forceLayout(ownerDocument);
+
+          // 如果 mutation 之前字体已经加载完毕（loaded），
+          // 但 mutation 后字体状态变成 loading，说明 DOM 变更引入了需要下载的新字体。
           if (
             // $FlowFixMe[prop-missing]
             ownerDocument.fonts.status === 'loading'
           ) {
-            // The mutation lead to new fonts being loaded. We should wait on them before continuing.
-            // This avoids waiting for potentially unrelated fonts that were already loading before.
-            // Either in an earlier transition or as part of a sync optimistic state. This doesn't
-            // include preloads that happened earlier.
+            // 将 document.fonts.ready（一个 Promise，在字体加载完成后 resolve）加入到 blockingPromises
+            // 确保过渡动画会等待字体加载完成。
             blockingPromises.push(ownerDocument.fonts.ready);
           }
         }
+
+        // blockingPromises 数组：由两部分组成
         const blockingIndexSnapshot = blockingPromises.length;
+        // 处理视口内未加载的图片（如果 suspendedState 提供了）
+        // suspendedState 由 React 在渲染阶段收集，包含那些尚未完成加载但可能位于视口内的图片元素。
         if (suspendedState !== null) {
           // Suspend on any images that still haven't loaded and are in the viewport.
           const suspenseyImages = suspendedState.suspenseyImages;
           let imgBytes = 0;
+          // 遍历所有未加载完的图片元素
           for (let i = 0; i < suspenseyImages.length; i++) {
             const suspenseyImage = suspenseyImages[i];
+
+            // 图片未加载
             if (!suspenseyImage.complete) {
               const rect = suspenseyImage.getBoundingClientRect();
               const inViewport =
@@ -2237,44 +2321,61 @@ export function startViewTransition(
                 rect.right > 0 &&
                 rect.top < ownerWindow.innerHeight &&
                 rect.left < ownerWindow.innerWidth;
+              // 位于视口内
               if (inViewport) {
                 imgBytes += estimateImageBytes(suspenseyImage);
                 if (imgBytes > estimatedBytesWithinLimit) {
                   // We don't think we'll be able to download all the images within
                   // the timeout. Give up. Rewind to only block on fonts, if any.
+                  // 我们认为在超时时间内无法下载所有图片，放弃。
                   blockingPromises.length = blockingIndexSnapshot;
                   break;
                 }
+                // 为符合条件的图片创建一个 Promise
+                // 该 Promise 在图片加载完成或超时后 resolve
                 const loadingImage = new Promise(
                   waitForImageToLoad.bind(suspenseyImage),
                 );
+                // 将这些 Promise 添加到 blockingPromises
                 blockingPromises.push(loadingImage);
               }
             }
           }
         }
+        //  等待阻塞项（字体/图片），最多 SUSPENSEY_FONT_AND_IMAGE_TIMEOUT 毫秒
         if (blockingPromises.length > 0) {
-          if (enableProfilerTimer) {
-            const blockedReason =
-              blockingIndexSnapshot > 0
-                ? blockingPromises.length > blockingIndexSnapshot
-                  ? 'Waiting on Fonts and Images'
-                  : 'Waiting on Fonts'
-                : 'Waiting on Images';
-            blockedCallback(blockedReason);
-          }
+          // if (enableProfilerTimer) {
+          //   const blockedReason =
+          //     blockingIndexSnapshot > 0
+          //       ? blockingPromises.length > blockingIndexSnapshot
+          //         ? 'Waiting on Fonts and Images'
+          //         : 'Waiting on Fonts'
+          //       : 'Waiting on Images';
+          //   blockedCallback(blockedReason);
+          // }
+
+          // Promise.race 并发执行，同时执行多个 Promise，谁先「完成 / 失败」，就返回谁的结果
+          // Promise.race 在 所有阻塞资源加载完成 与 超时 之间竞争。
           const blockingReady = Promise.race([
-            Promise.all(blockingPromises),
+            Promise.all(blockingPromises), // 全部执行完毕
             new Promise(resolve =>
               setTimeout(resolve, SUSPENSEY_FONT_AND_IMAGE_TIMEOUT),
             ),
+
+            // 无论哪个先完成，都会执行 layoutCallback
           ]).then(layoutCallback, layoutCallback);
+
+          // 如果存在 pendingNavigation，则还要等待导航完成（pendingNavigation.finished
+          // 确保了 导航和资源加载都完成后，才进入下一步
           const allReady = pendingNavigation
+            // 等待一组 Promise 全部结束（不管成功还是失败）
             ? Promise.allSettled([pendingNavigation.finished, blockingReady])
             : blockingReady;
+
+          // 通知 React 的视图过渡机制：“新状态已捕获完成，可以结束 update 回调，继续后续的动画收尾”
           return allReady.then(afterMutationCallback, afterMutationCallback);
         }
-        // 直接执行 layoutCallback
+        // 无阻塞项，直接执行 layout 阶段
         layoutCallback();
         if (pendingNavigation) {
           return pendingNavigation.finished.then(
@@ -2285,6 +2386,7 @@ export function startViewTransition(
           afterMutationCallback();
         }
       },
+      // 标记过渡类型，方便 CSS 差异化动画
       types: transitionTypes,
     });
     // $FlowFixMe[prop-missing]
@@ -2297,17 +2399,21 @@ export function startViewTransition(
       const documentElement: Element = (ownerDocument.documentElement: any);
       // Loop through all View Transition Animations.
       // $FlowFixMe[prop-missing]
+      // 获取所有动画（包括伪元素的）
       const animations = documentElement.getAnimations({subtree: true});
       for (let i = 0; i < animations.length; i++) {
         const animation = animations[i];
         const effect: KeyframeEffect = (animation.effect: any);
         // $FlowFixMe
         const pseudoElement: ?string = effect.pseudoElement;
+
+        // 过滤出伪元素为 ::view-transition-* 的动画（即视图过渡相关的动画）
         if (
           pseudoElement != null &&
           pseudoElement.startsWith('::view-transition')
         ) {
           viewTransitionAnimations.push(animation);
+          // 获取其关键帧数组
           const keyframes = effect.getKeyframes();
           // Next, we're going to try to optimize this animation in case the auto-generated
           // width/height keyframes are unnecessary.
@@ -2331,6 +2437,7 @@ export function startViewTransition(
               break;
             }
             // We're clearing the keyframes in case we are going to apply the optimization.
+            // 如果尺寸不变，则删除关键帧中的 width 和 height 属性（以及 transform: 'none'）
             delete keyframe.width;
             delete keyframe.height;
             if (keyframe.transform === 'none') {
@@ -2344,6 +2451,7 @@ export function startViewTransition(
           ) {
             // Replace the keyframes with ones that don't animate the width/height.
             // $FlowFixMe
+            // 重新设置关键帧
             effect.setKeyframes(keyframes);
             // Read back the new animation to see what the underlying width/height of the pseudo-element was.
             const computedStyle = getComputedStyle(
@@ -2404,6 +2512,7 @@ export function startViewTransition(
         // In Safari, we need to manually cancel all manually started animations
         // or it'll block or interfer with future transitions.
         // We can't use getAnimations() due to #35336 so we collect them in an array.
+        // 手动取消动画（在 Safari 中）
         viewTransitionAnimations[i].cancel();
       }
       // $FlowFixMe[prop-missing]
@@ -2414,6 +2523,7 @@ export function startViewTransition(
       if (enableProfilerTimer) {
         finishedAnimation();
       }
+      // 触发 useEffect 等被动副作用
       passiveCallback();
     });
     return transition;
@@ -3649,14 +3759,30 @@ export function updateFragmentInstanceFiber(
   instance._fragmentFiber = fragmentFiber;
 }
 
+/**
+ * 将新的子节点连接到 Fragment 实例
+ * 
+ * 为什么需要复制事件监听器？
+ * - Fragment 上的事件监听器是在 Fragment 创建时绑定的           
+ * - 新插入的子节点不在 Fragment 的 DOM 子树中             
+ * - 新节点不会自动继承 Fragment 的事件   
+ * 解决：
+ *  - 将 Fragment 的事件监听器复制到每个新子节点
+ * @param {*} childInstance 
+ * @param {*} fragmentInstance 
+ * @returns 
+ */
 export function commitNewChildToFragmentInstance(
   childInstance: InstanceWithFragmentHandles | Text,
   fragmentInstance: FragmentInstanceType,
 ): void {
+  // 跳过文本节点
   if (childInstance.nodeType === TEXT_NODE) {
     return;
   }
+
   const instance: InstanceWithFragmentHandles = (childInstance: any);
+  // 复制事件监听器
   const eventListeners = fragmentInstance._eventListeners;
   if (eventListeners !== null) {
     for (let i = 0; i < eventListeners.length; i++) {
@@ -3664,11 +3790,13 @@ export function commitNewChildToFragmentInstance(
       instance.addEventListener(type, listener, optionsOrUseCapture);
     }
   }
+  // 添加 MutationObserver
   if (fragmentInstance._observers !== null) {
     fragmentInstance._observers.forEach(observer => {
       observer.observe(instance);
     });
   }
+  // 添加 Fragment Handle
   if (enableFragmentRefsInstanceHandles) {
     addFragmentHandleToInstance(instance, fragmentInstance);
   }

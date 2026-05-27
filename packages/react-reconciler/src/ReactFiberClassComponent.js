@@ -203,7 +203,8 @@ const classComponentUpdater = {
     const lane = requestUpdateLane(fiber);
 
     const update = createUpdate(lane);
-    update.tag = ReplaceState;
+    update.tag = ReplaceState; // 标记这是一个替换状态更新
+    // 将 payload（新的 state 对象）存入 update.payload
     update.payload = payload;
 
     if (callback !== undefined && callback !== null) {
@@ -224,13 +225,14 @@ const classComponentUpdater = {
       markStateUpdateScheduled(fiber, lane);
     }
   },
+  // 创建一个 强制更新 的更新对象，并调度更新
   // $FlowFixMe[missing-local-annot]
   enqueueForceUpdate(inst: any, callback) {
     const fiber = getInstance(inst);
     const lane = requestUpdateLane(fiber);
 
     const update = createUpdate(lane);
-    update.tag = ForceUpdate;
+    update.tag = ForceUpdate; // 标记这是一个强制更新
 
     if (callback !== undefined && callback !== null) {
       if (__DEV__) {
@@ -239,9 +241,11 @@ const classComponentUpdater = {
       update.callback = callback;
     }
 
+    // 将更新添加到 Fiber 的更新队列中
     const root = enqueueUpdate(fiber, update, lane);
     if (root !== null) {
       startUpdateTimerByLane(lane, 'this.forceUpdate()', fiber);
+      // 触发 Fiber 开始的调度
       scheduleUpdateOnFiber(root, fiber, lane);
       entangleTransitions(root, fiber, lane);
     }
@@ -337,6 +341,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         name,
       );
     }
+    // getDefaultProps 已废弃，建议使用 defaultProps 替代
     if (
       instance.getDefaultProps &&
       !instance.getDefaultProps.isReactClassApproved
@@ -348,6 +353,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         name,
       );
     }
+    // 类实例 属性 contextType 已废弃，建议使用 类静态 属性 contextType 替代
     if (instance.contextType) {
       console.error(
         'contextType was defined as an instance property on %s. Use a static ' +
@@ -365,6 +371,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
           name,
         );
       }
+      // 类静态 属性 contextTypes 已废弃，建议使用 类实例 属性 contextType 替代
       if (ctor.contextTypes && !didWarnAboutContextTypes.has(ctor)) {
         didWarnAboutContextTypes.add(ctor);
         console.error(
@@ -375,6 +382,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         );
       }
     } else {
+      // 类实例 属性 contextTypes 已废弃，建议使用 类静态 属性 contextTypes 替代
       if (instance.contextTypes) {
         console.error(
           'contextTypes was defined as an instance property on %s. Use a static ' +
@@ -504,6 +512,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         name,
       );
     }
+    // 类实例 方法 getDerivedStateFromProps 已废弃，建议使用 静态方法 getDerivedStateFromError 替代
     if (typeof instance.getDerivedStateFromError === 'function') {
       console.error(
         '%s: getDerivedStateFromError() is defined as an instance method ' +
@@ -511,6 +520,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         name,
       );
     }
+    // 类静态 方法 getSnapshotBeforeUpdate 已废弃，建议使用 类实例 方法 getSnapshotBeforeUpdate 替代
     if (typeof ctor.getSnapshotBeforeUpdate === 'function') {
       console.error(
         '%s: getSnapshotBeforeUpdate() is defined as a static method ' +
@@ -518,6 +528,7 @@ function checkClassInstance(workInProgress: Fiber, ctor: any, newProps: any) {
         name,
       );
     }
+    // state必须是一个对象或 null
     const state = instance.state;
     if (state && (typeof state !== 'object' || isArray(state))) {
       console.error('%s.state: must be set to an object or null', name);
@@ -824,6 +835,7 @@ function mountClassInstance(
 
   instance.state = workInProgress.memoizedState;
 
+  // 执行类静态方法 getDerivedStateFromProps
   const getDerivedStateFromProps = ctor.getDerivedStateFromProps;
   if (typeof getDerivedStateFromProps === 'function') {
     applyDerivedStateFromProps(
@@ -843,6 +855,7 @@ function mountClassInstance(
     (typeof instance.UNSAFE_componentWillMount === 'function' ||
       typeof instance.componentWillMount === 'function')
   ) {
+    // 执行类 生命周期 componentWillMount ｜ UNSAFE_componentWillMount（已不推荐）
     callComponentWillMount(workInProgress, instance);
     // If we had additional state updates during this life-cycle, let's
     // process them now.
@@ -852,7 +865,7 @@ function mountClassInstance(
   }
 
   if (typeof instance.componentDidMount === 'function') {
-    workInProgress.flags |= Update | LayoutStatic;
+    workInProgress.flags |= Update | LayoutStatic; // 标记为需要更新
   }
   if (__DEV__ && (workInProgress.mode & StrictEffectsMode) !== NoMode) {
     workInProgress.flags |= MountLayoutDev;
@@ -1057,6 +1070,7 @@ function updateClassInstance(
       unresolvedOldProps !== unresolvedNewProps ||
       oldContext !== nextContext
     ) {
+      // 执行类 生命周期 componentWillReceiveProps ｜ UNSAFE_componentWillReceiveProps（已不推荐）
       callComponentWillReceiveProps(
         workInProgress,
         instance,
@@ -1092,7 +1106,7 @@ function updateClassInstance(
         unresolvedOldProps !== current.memoizedProps ||
         oldState !== current.memoizedState
       ) {
-        workInProgress.flags |= Update;
+        workInProgress.flags |= Update; // 标记为需要更新
       }
     }
     if (typeof instance.getSnapshotBeforeUpdate === 'function') {
@@ -1100,12 +1114,13 @@ function updateClassInstance(
         unresolvedOldProps !== current.memoizedProps ||
         oldState !== current.memoizedState
       ) {
-        workInProgress.flags |= Snapshot;
+        workInProgress.flags |= Snapshot; // 标记为需要获取快照
       }
     }
     return false;
   }
 
+  // 执行类静态方法 getDerivedStateFromProps
   if (typeof getDerivedStateFromProps === 'function') {
     applyDerivedStateFromProps(
       workInProgress,
@@ -1144,17 +1159,19 @@ function updateClassInstance(
         typeof instance.componentWillUpdate === 'function')
     ) {
       if (typeof instance.componentWillUpdate === 'function') {
+        // 执行类 生命周期 componentWillUpdate（已不推荐）
         instance.componentWillUpdate(newProps, newState, nextContext);
       }
       if (typeof instance.UNSAFE_componentWillUpdate === 'function') {
+        // 执行类 生命周期  UNSAFE_componentWillUpdate（已不推荐）
         instance.UNSAFE_componentWillUpdate(newProps, newState, nextContext);
       }
     }
     if (typeof instance.componentDidUpdate === 'function') {
-      workInProgress.flags |= Update;
+      workInProgress.flags |= Update; // 标记为需要更新
     }
     if (typeof instance.getSnapshotBeforeUpdate === 'function') {
-      workInProgress.flags |= Snapshot;
+      workInProgress.flags |= Snapshot; // 标记为需要获取快照
     }
   } else {
     // If an update was already in progress, we should schedule an Update
@@ -1164,7 +1181,7 @@ function updateClassInstance(
         unresolvedOldProps !== current.memoizedProps ||
         oldState !== current.memoizedState
       ) {
-        workInProgress.flags |= Update;
+        workInProgress.flags |= Update; // 标记为需要更新
       }
     }
     if (typeof instance.getSnapshotBeforeUpdate === 'function') {
@@ -1172,7 +1189,7 @@ function updateClassInstance(
         unresolvedOldProps !== current.memoizedProps ||
         oldState !== current.memoizedState
       ) {
-        workInProgress.flags |= Snapshot;
+        workInProgress.flags |= Snapshot; // 标记为需要获取快照
       }
     }
 
@@ -1208,6 +1225,7 @@ export function resolveClassComponentProps(
   }
 
   // Resolve default props.
+  // 类静态 属性 defaultProps
   const defaultProps = Component.defaultProps;
   if (defaultProps) {
     // We may have already copied the props object above to remove ref. If so,

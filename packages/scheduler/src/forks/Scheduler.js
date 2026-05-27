@@ -477,27 +477,36 @@ let taskTimeoutID: TimeoutID = (-1: any);
 // thread, like user events. By default, it yields multiple times per frame.
 // It does not attempt to align with frame boundaries, since most tasks don't
 // need to be frame aligned; for those that do, use requestAnimationFrame.
-let frameInterval: number = frameYieldMs;
-let startTime = -1;
+let frameInterval: number = frameYieldMs; // 每帧时间间隔 (默认 5ms)
+let startTime = -1; // 当前帧开始时间
 
+/**
+ * 判断是否应该让出主线程给浏览器
+ * @returns 
+ */
 function shouldYieldToHost(): boolean {
+  	// enableRequestPaint 是否启用请求重绘检测
   if (!enableAlwaysYieldScheduler && enableRequestPaint && needsPaint) {
     // Yield now.
+    // 需要重绘，立即让出
     return true;
   }
+  // 检查时间片
   const timeElapsed = getCurrentTime() - startTime;
   if (timeElapsed < frameInterval) {
     // The main thread has only been blocked for a really short amount of time;
     // smaller than a single frame. Don't yield yet.
+    // 时间片未用完，不让出
     return false;
   }
   // Yield now.
+  // 时间片用完，让出
   return true;
 }
 
 function requestPaint() {
   if (enableRequestPaint) {
-    needsPaint = true;
+    needsPaint = true; // 标志需要重绘
   }
 }
 

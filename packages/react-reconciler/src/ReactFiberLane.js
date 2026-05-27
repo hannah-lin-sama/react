@@ -612,13 +612,29 @@ export function getLanesToRetrySynchronouslyOnError(
   return NoLanes;
 }
 
+/**
+ * 检查 lanes 中是否包含同步 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesSyncLane(lanes: Lanes): boolean {
   return (lanes & (SyncLane | SyncHydrationLane)) !== NoLanes;
 }
 
+/**
+ * 检查 lanes 中是否包含非空闲工作
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesNonIdleWork(lanes: Lanes): boolean {
   return (lanes & NonIdleLanes) !== NoLanes;
 }
+
+/**
+ * 检查 lanes 中是否只包含重试 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesOnlyRetries(lanes: Lanes): boolean {
   return (lanes & RetryLanes) === lanes;
 }
@@ -629,18 +645,39 @@ export function includesOnlyNonUrgentLanes(lanes: Lanes): boolean {
     SyncLane | InputContinuousLane | DefaultLane | GestureLane;
   return (lanes & UrgentLanes) === NoLanes;
 }
+
+/**
+ * 检查 lanes 中是否只包含过渡 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesOnlyTransitions(lanes: Lanes): boolean {
   return (lanes & TransitionLanes) === lanes;
 }
 
+/**
+ * 检查 lanes 中是否包含过渡 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesTransitionLane(lanes: Lanes): boolean {
   return (lanes & TransitionLanes) !== NoLanes;
 }
 
+/**
+ * 检查 lanes 中是否包含重试 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesRetryLane(lanes: Lanes): boolean {
   return (lanes & RetryLanes) !== NoLanes;
 }
 
+/**
+ * 检查 lanes 中是否包含空闲 lane
+ * @param {*} lanes 
+ * @returns 
+ */
 export function includesIdleGroupLanes(lanes: Lanes): boolean {
   return (
     (lanes &

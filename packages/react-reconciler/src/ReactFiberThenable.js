@@ -104,51 +104,62 @@ export function isThenableResolved(thenable: Thenable<mixed>): boolean {
   return status === 'fulfilled' || status === 'rejected';
 }
 
+/**
+ * 追踪 thenable，处理缓存、同步解析、挂起
+ * @param {*} thenableState thenable 追踪状态
+ * @param {*} thenable Promise 或 thenable 对象
+ * @param {*} index thenable 位置索引
+ * @returns 
+ */
 export function trackUsedThenable<T>(
   thenableState: ThenableState,
   thenable: Thenable<T>,
   index: number,
 ): T {
-  if (__DEV__ && ReactSharedInternals.actQueue !== null) {
-    ReactSharedInternals.didUsePromise = true;
-  }
+  // if (__DEV__ && ReactSharedInternals.actQueue !== null) {
+  //   ReactSharedInternals.didUsePromise = true;
+  // }
+  // 获取缓存的 thenables
   const trackedThenables = getThenablesFromState(thenableState);
   const previous = trackedThenables[index];
+
+  //  缓存检查
   if (previous === undefined) {
     trackedThenables.push(thenable);
   } else {
+    // 同一索引使用同一个 thenable
     if (previous !== thenable) {
       // Reuse the previous thenable, and drop the new one. We can assume
       // they represent the same value, because components are idempotent.
 
-      if (__DEV__) {
-        const thenableStateDev: ThenableStateDev = (thenableState: any);
-        if (!thenableStateDev.didWarnAboutUncachedPromise) {
-          // We should only warn the first time an uncached thenable is
-          // discovered per component, because if there are multiple, the
-          // subsequent ones are likely derived from the first.
-          //
-          // We track this on the thenableState instead of deduping using the
-          // component name like we usually do, because in the case of a
-          // promise-as-React-node, the owner component is likely different from
-          // the parent that's currently being reconciled. We'd have to track
-          // the owner using state, which we're trying to move away from. Though
-          // since this is dev-only, maybe that'd be OK.
-          //
-          // However, another benefit of doing it this way is we might
-          // eventually have a thenableState per memo/Forget boundary instead
-          // of per component, so this would allow us to have more
-          // granular warnings.
-          thenableStateDev.didWarnAboutUncachedPromise = true;
+      // if (__DEV__) {
+      //   const thenableStateDev: ThenableStateDev = (thenableState: any);
+      //   if (!thenableStateDev.didWarnAboutUncachedPromise) {
+      //     // We should only warn the first time an uncached thenable is
+      //     // discovered per component, because if there are multiple, the
+      //     // subsequent ones are likely derived from the first.
+      //     //
+      //     // We track this on the thenableState instead of deduping using the
+      //     // component name like we usually do, because in the case of a
+      //     // promise-as-React-node, the owner component is likely different from
+      //     // the parent that's currently being reconciled. We'd have to track
+      //     // the owner using state, which we're trying to move away from. Though
+      //     // since this is dev-only, maybe that'd be OK.
+      //     //
+      //     // However, another benefit of doing it this way is we might
+      //     // eventually have a thenableState per memo/Forget boundary instead
+      //     // of per component, so this would allow us to have more
+      //     // granular warnings.
+      //     thenableStateDev.didWarnAboutUncachedPromise = true;
 
-          // TODO: This warning should link to a corresponding docs page.
-          console.error(
-            'A component was suspended by an uncached promise. Creating ' +
-              'promises inside a Client Component or hook is not yet ' +
-              'supported, except via a Suspense-compatible library or framework.',
-          );
-        }
-      }
+      //     // TODO: This warning should link to a corresponding docs page.
+      //     console.error(
+      //       'A component was suspended by an uncached promise. Creating ' +
+      //         'promises inside a Client Component or hook is not yet ' +
+      //         'supported, except via a Suspense-compatible library or framework.',
+      //     );
+      //   }
+      // }
 
       // Avoid an unhandled rejection errors for the Promises that we'll
       // intentionally ignore.
@@ -157,32 +168,32 @@ export function trackUsedThenable<T>(
     }
   }
 
-  if (__DEV__ && enableAsyncDebugInfo && thenable._debugInfo === undefined) {
-    // In DEV mode if the thenable that we observed had no debug info, then we add
-    // an inferred debug info so that we're able to track its potential I/O uniquely.
-    // We don't know the real start time since the I/O could have started much
-    // earlier and this could even be a cached Promise. Could be misleading.
-    const startTime = performance.now();
-    const displayName = thenable.displayName;
-    const ioInfo: ReactIOInfo = {
-      name: typeof displayName === 'string' ? displayName : 'Promise',
-      start: startTime,
-      end: startTime,
-      value: (thenable: any),
-      // We don't know the requesting owner nor stack.
-    };
-    // We can infer the await owner/stack lazily from where this promise ends up
-    // used. It can be used in more than one place so we can't assign it here.
-    thenable._debugInfo = [{awaited: ioInfo}];
-    // Track when we resolved the Promise as the approximate end time.
-    if (thenable.status !== 'fulfilled' && thenable.status !== 'rejected') {
-      const trackEndTime = () => {
-        // $FlowFixMe[cannot-write]
-        ioInfo.end = performance.now();
-      };
-      thenable.then(trackEndTime, trackEndTime);
-    }
-  }
+  // if (__DEV__ && enableAsyncDebugInfo && thenable._debugInfo === undefined) {
+  //   // In DEV mode if the thenable that we observed had no debug info, then we add
+  //   // an inferred debug info so that we're able to track its potential I/O uniquely.
+  //   // We don't know the real start time since the I/O could have started much
+  //   // earlier and this could even be a cached Promise. Could be misleading.
+  //   const startTime = performance.now();
+  //   const displayName = thenable.displayName;
+  //   const ioInfo: ReactIOInfo = {
+  //     name: typeof displayName === 'string' ? displayName : 'Promise',
+  //     start: startTime,
+  //     end: startTime,
+  //     value: (thenable: any),
+  //     // We don't know the requesting owner nor stack.
+  //   };
+  //   // We can infer the await owner/stack lazily from where this promise ends up
+  //   // used. It can be used in more than one place so we can't assign it here.
+  //   thenable._debugInfo = [{awaited: ioInfo}];
+  //   // Track when we resolved the Promise as the approximate end time.
+  //   if (thenable.status !== 'fulfilled' && thenable.status !== 'rejected') {
+  //     const trackEndTime = () => {
+  //       // $FlowFixMe[cannot-write]
+  //       ioInfo.end = performance.now();
+  //     };
+  //     thenable.then(trackEndTime, trackEndTime);
+  //   }
+  // }
 
   // We use an expando to track the status and result of a thenable so that we
   // can synchronously unwrap the value. Think of this as an extension of the
@@ -192,10 +203,12 @@ export function trackUsedThenable<T>(
   // a listener that will update its status and result when it resolves.
   switch (thenable.status) {
     case 'fulfilled': {
+      // 直接返回结果，不会中断渲染
       const fulfilledValue: T = thenable.value;
       return fulfilledValue;
     }
     case 'rejected': {
+      // 抛出错误，由最近的 Error Boundary 捕获
       const rejectedError = thenable.reason;
       checkIfUseWrappedInAsyncCatch(rejectedError);
       throw rejectedError;
@@ -213,6 +226,7 @@ export function trackUsedThenable<T>(
 
         // Detect infinite ping loops caused by uncached promises.
         const root = getWorkInProgressRoot();
+        // 如果超过阈值，抛出错误，防止因异步 Client Component 导致死循环
         if (root !== null && root.shellSuspendCounter > 100) {
           // This root has suspended repeatedly in the shell without making any
           // progress (i.e. committing something). This is highly suggestive of
@@ -236,6 +250,7 @@ export function trackUsedThenable<T>(
           );
         }
 
+        // 扩展 thenable
         const pendingThenable: PendingThenable<T> = (thenable: any);
         pendingThenable.status = 'pending';
         pendingThenable.then(
@@ -257,6 +272,7 @@ export function trackUsedThenable<T>(
       }
 
       // Check one more time in case the thenable resolved synchronously.
+      // 再次检查状态
       switch ((thenable: Thenable<T>).status) {
         case 'fulfilled': {
           const fulfilledThenable: FulfilledThenable<T> = (thenable: any);
@@ -277,10 +293,16 @@ export function trackUsedThenable<T>(
       // opaque placeholder value instead of the actual thenable. If it doesn't
       // get captured by the work loop, log a warning, because that means
       // something in userspace must have caught it.
+      // 如果仍然是 pending
+      // 挂起
       suspendedThenable = thenable;
       if (__DEV__) {
         needsToResetSuspendedThenableDEV = true;
       }
+      // 抛出内部标记 SuspenseException
+      // React 的渲染循环会捕获这个异常，并中断当前组件的渲染，转而渲染最近的 <Suspense> 边界的 fallback
+      // 当 thenable 完成后，React 会重新渲染该组件，再次进入 trackUsedThenable，
+      // 此时 thenable 状态变为 'fulfilled' 或 'rejected'，从而正常返回或抛出错误。
       throw SuspenseException;
     }
   }
@@ -294,6 +316,11 @@ export function suspendCommit(): void {
   throw SuspenseyCommitException;
 }
 
+/**
+ * 解析 lazy 组件
+ * @param {*} lazyType 
+ * @returns 
+ */
 export function resolveLazy<T>(lazyType: LazyComponentType<T, any>): T {
   try {
     if (__DEV__) {

@@ -274,12 +274,15 @@ export function commitHookEffectListUnmount(
   nearestMountedAncestor: Fiber | null,
 ) {
   try {
+    // 获取 updateQueue
     const updateQueue: FunctionComponentUpdateQueue | null =
       (finishedWork.updateQueue: any);
+
     const lastEffect = updateQueue !== null ? updateQueue.lastEffect : null;
 
     // 遍历 fiber 的 Effect 链表  
     if (lastEffect !== null) {
+      // 获取第一个 effect
       const firstEffect = lastEffect.next;
       let effect = firstEffect;
       do {

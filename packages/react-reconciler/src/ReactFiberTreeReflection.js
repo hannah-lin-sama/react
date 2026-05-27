@@ -330,6 +330,12 @@ export function isFiberSuspenseAndTimedOut(fiber: Fiber): boolean {
   );
 }
 
+/**
+ * 检查 childFiber 是否在 parentFiber 的子树中
+ * @param {*} parentFiber 父fiber
+ * @param {*} childFiber 子fiber
+ * @returns 
+ */
 export function doesFiberContain(
   parentFiber: Fiber,
   childFiber: Fiber,
@@ -340,9 +346,9 @@ export function doesFiberContain(
     if (node === parentFiber || node === parentFiberAlternate) {
       return true;
     }
-    node = node.return;
+    node = node.return; // 向上遍历
   }
-  return false;
+  return false; // 未找到
 }
 
 export function traverseFragmentInstance<A, B, C>(

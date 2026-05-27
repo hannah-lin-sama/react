@@ -446,7 +446,12 @@ function commitDeletedPairViewTransitions(deletion: Fiber): void {
   }
 }
 
+/**
+ * 处理 View Transition 退出动画
+ * @param {*} deletion 
+ */
 export function commitExitViewTransitions(deletion: Fiber): void {
+  // 处理 View Transition 退出动画
   if (deletion.tag === ViewTransitionComponent) {
     const props: ViewTransitionProps = deletion.memoizedProps;
     const name = getViewTransitionName(props, deletion.stateNode);
@@ -454,11 +459,13 @@ export function commitExitViewTransitions(deletion: Fiber): void {
       appearingViewTransitions !== null
         ? appearingViewTransitions.get(name)
         : undefined;
+        // 获取 CSS 类名
     const className: ?string = getViewTransitionClassName(
       props.default,
       pair !== undefined ? props.share : props.exit,
     );
     if (className !== 'none') {
+      // 应用 view transition
       const inViewport = applyViewTransitionToHostInstances(
         deletion,
         name,
@@ -467,6 +474,7 @@ export function commitExitViewTransitions(deletion: Fiber): void {
         false,
       );
       if (!inViewport) {
+         // 不在视口内，恢复 transition names
         // Revert the transition names. This boundary is not in the viewport
         // so we won't bother animating it.
         restoreViewTransitionOnHostInstances(deletion.child, false);
@@ -474,6 +482,8 @@ export function commitExitViewTransitions(deletion: Fiber): void {
       } else if (pair !== undefined) {
         // We found a new appearing view transition with the same name as this deletion.
         // We'll transition between them instead of running the normal exit.
+        // 找到配对的 appearing transition
+        // 配对两个 ViewTransitionState
         const oldInstance: ViewTransitionState = deletion.stateNode;
         const newInstance: ViewTransitionState = pair;
         newInstance.paired = oldInstance;
@@ -486,13 +496,17 @@ export function commitExitViewTransitions(deletion: Fiber): void {
         // Therefore it's possible for onShare to be called with only an old snapshot.
         scheduleViewTransitionEvent(deletion, props.onShare);
       } else {
+        // 正常退出动画
         scheduleViewTransitionEvent(deletion, props.onExit);
       }
     }
+    // 递归处理子树
     if (appearingViewTransitions !== null) {
       // Look for more pairs deeper in the tree.
       commitDeletedPairViewTransitions(deletion);
     }
+
+    // 递归处理子树
   } else if ((deletion.subtreeFlags & ViewTransitionStatic) !== NoFlags) {
     let child = deletion.child;
     while (child !== null) {
@@ -506,6 +520,12 @@ export function commitExitViewTransitions(deletion: Fiber): void {
   }
 }
 
+/**
+ * 
+ * @param {*} current 
+ * @param {*} finishedWork 
+ * @returns 
+ */
 export function commitBeforeUpdateViewTransition(
   current: Fiber,
   finishedWork: Fiber,
@@ -544,11 +564,11 @@ export function commitBeforeUpdateViewTransition(
     return;
   }
   applyViewTransitionToHostInstances(
-    current,
-    oldName,
-    className,
-    (current.memoizedState = []),
-    true,
+    current, // 旧fiber
+    oldName, // 旧名称
+    className, // 动画类
+    (current.memoizedState = []), // 收集目标
+    true,// 更新模式
   );
 }
 

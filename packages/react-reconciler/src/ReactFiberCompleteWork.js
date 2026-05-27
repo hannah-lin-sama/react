@@ -920,6 +920,13 @@ function bubbleProperties(completedWork: Fiber) {
   return didBailout;
 }
 
+/**
+ * 完成 Activity 组件的水合边界处理
+ * @param {*} current 
+ * @param {*} workInProgress 
+ * @param {*} nextState 
+ * @returns 
+ */
 function completeDehydratedActivityBoundary(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -930,6 +937,7 @@ function completeDehydratedActivityBoundary(
   if (nextState !== null) {
     // We might be inside a hydration state the first time we're picking up this
     // Activity boundary, and also after we've reentered it for further hydration.
+    // 首次挂载
     if (current === null) {
       if (!wasHydrated) {
         throw new Error(
@@ -955,6 +963,7 @@ function completeDehydratedActivityBoundary(
       }
       return false;
     } else {
+       // 更新
       emitPendingHydrationWarnings();
       // We might have reentered this boundary to hydrate it. If so, we need to reset the hydration
       // state since we're now exiting out of it. popHydrationState doesn't do that for us.
@@ -987,6 +996,7 @@ function completeDehydratedActivityBoundary(
       return false;
     }
   } else {
+    // 成功完成树
     // Successfully completed this tree. If this was a forced client render,
     // there may have been recoverable errors during first hydration
     // attempt. If so, add them to a queue so we can log them in the
@@ -1084,6 +1094,13 @@ function completeDehydratedSuspenseBoundary(
   }
 }
 
+/**
+ * 完成 fiber 的渲染阶段，处理不同类型 fiber 的最终工作
+ * @param {*} current 
+ * @param {*} workInProgress 
+ * @param {*} renderLanes 
+ * @returns 
+ */
 function completeWork(
   current: Fiber | null,
   workInProgress: Fiber,
@@ -1511,20 +1528,27 @@ function completeWork(
     case ActivityComponent: {
       const nextState: null | ActivityState = workInProgress.memoizedState;
 
+      // 处理脱水边界（SSR 水合）
       if (current === null || current.memoizedState !== null) {
+
+        // 尝试完成脱水的 Activity 边界的水合
         const fallthroughToNormalOffscreenPath =
           completeDehydratedActivityBoundary(
             current,
             workInProgress,
             nextState,
           );
+
+          // 水合未完成处理
         if (!fallthroughToNormalOffscreenPath) {
+          // 强制客户端渲染
           if (workInProgress.flags & ForceClientRender) {
             popSuspenseHandler(workInProgress);
             // Special case. There were remaining unhydrated nodes. We treat
             // this as a mismatch. Revert to client rendering.
             return workInProgress;
           } else {
+            // 等待重试
             popSuspenseHandler(workInProgress);
             // Did not finish hydrating, either because this is the initial
             // render or because something suspended.
@@ -1532,6 +1556,7 @@ function completeWork(
           }
         }
 
+        // 检查意外挂起（DidCapture）
         if ((workInProgress.flags & DidCapture) !== NoFlags) {
           // We called retryActivityComponentWithoutHydrating and tried client rendering
           // but now we suspended again. We should never arrive here because we should
@@ -1545,6 +1570,7 @@ function completeWork(
         // Continue with the normal Activity path.
       }
 
+      // 向上合并属性
       bubbleProperties(workInProgress);
       return null;
     }
@@ -1590,26 +1616,31 @@ function completeWork(
 
       popSuspenseHandler(workInProgress);
 
+      // 处理挂起（DidCapture 标记）
       if ((workInProgress.flags & DidCapture) !== NoFlags) {
         // Something suspended. Re-render with the fallback children.
-        // 有子节点挂起，需要重新渲染 fallback
-        workInProgress.lanes = renderLanes;
-        if (
-          enableProfilerTimer &&
-          (workInProgress.mode & ProfileMode) !== NoMode
-        ) {
-          transferActualDuration(workInProgress);
-        }
+        // 如果当前边界在渲染过程中捕获了挂起（子组件抛出了 Promise），则标记 DidCapture。
+        // 在 completeWork 中，如果这个标记存在，说明需要立即重新渲染 fallback。
+        workInProgress.lanes = renderLanes; // 将优先级保留
+        // if (
+        //   enableProfilerTimer &&
+        //   (workInProgress.mode & ProfileMode) !== NoMode
+        // ) {
+        //   transferActualDuration(workInProgress);
+        // }
         // Don't bubble properties in this case.
         // 返回非 null，触发重新渲染
+        // 触发一次新的 beginWork，从而切换到 fallback 渲染路径
         return workInProgress;
       }
 
+      // 检查缓存池变化（用于 Offscreen 子树的缓存）
       const nextDidTimeout = nextState !== null;
       const prevDidTimeout =
         current !== null &&
         (current.memoizedState: null | SuspenseState) !== null;
 
+      // 当 nextDidTimeout === true（即当前显示 fallback）时
       if (nextDidTimeout) {
         const offscreenFiber: Fiber = (workInProgress.child: any);
         let previousCache: Cache | null = null;
@@ -1627,6 +1658,8 @@ function completeWork(
         ) {
           cache = offscreenFiber.memoizedState.cachePool.pool;
         }
+        // 如果变化，需要在 Offscreen 上打上 Passive 标记
+        // 在提交阶段执行缓存保留/释放的 effect（
         if (cache !== previousCache) {
           // Run passive effects to retain/release the cache.
           offscreenFiber.flags |= Passive;
@@ -1635,9 +1668,11 @@ function completeWork(
 
       // If the suspended state of the boundary changes, we need to schedule
       // a passive effect, which is when we process the transitions
+      // 处理可见性切换（fallback ↔ primary
       if (nextDidTimeout !== prevDidTimeout) {
         if (enableTransitionTracing) {
           const offscreenFiber: Fiber = (workInProgress.child: any);
+          // 给 Offscreen 添加 Passive 标记，用于在 layout 阶段处理 transition 相关逻辑
           offscreenFiber.flags |= Passive;
         }
 
@@ -1652,8 +1687,10 @@ function completeWork(
         // logic applies: when re-connecting, the Offscreen fiber's complete
         // phase will handle scheduling the effect. It's only when the fallback
         // is active that we have to do anything special.
+        // 如果 切换到 fallback
         if (nextDidTimeout) {
           const offscreenFiber: Fiber = (workInProgress.child: any);
+          // 添加 Visibility 标记。这个标记会触发 Offscreen 子树“隐藏”的 effect
           offscreenFiber.flags |= Visibility;
         }
       }
@@ -1661,6 +1698,7 @@ function completeWork(
       const retryQueue: RetryQueue | null = (workInProgress.updateQueue: any);
       scheduleRetryEffect(workInProgress, retryQueue);
 
+      // 提供了 suspenseCallback prop（实验性），并且边界状态发生变化，则标记 Update
       if (
         enableSuspenseCallback &&
         workInProgress.updateQueue !== null &&
@@ -1668,8 +1706,10 @@ function completeWork(
       ) {
         // Always notify the callback
         // TODO: Move to passive phase
+        // 在提交阶段调用该回调
         workInProgress.flags |= Update;
       }
+      //  向上冒泡属性
       bubbleProperties(workInProgress);
       // if (enableProfilerTimer) {
       //   if ((workInProgress.mode & ProfileMode) !== NoMode) {
@@ -1684,6 +1724,8 @@ function completeWork(
       //     }
       //   }
       // }
+
+      // 示当前节点已完成，无需继续处理兄弟节点（工作循环会回溯到父节点）
       return null;
     }
     // 处理 HostPortal 类型 Fiber 的完成阶段
@@ -2092,7 +2134,8 @@ function completeWork(
         // We're a component that might need an exit transition. This flag will
         // bubble up to the parent tree to indicate that there's a child that
         // might need an exit View Transition upon unmount.
-        workInProgress.flags |= ViewTransitionStatic;
+        workInProgress.flags |= ViewTransitionStatic; // 标记为静态视图转换组件 33554432
+        // 冒泡属性到父节点   
         bubbleProperties(workInProgress);
       }
       return null;

@@ -1286,6 +1286,8 @@ function resolveDefaultProps(Component: any, baseProps: any) {
   if (Component && Component.defaultProps) {
     // Resolve default props. Taken from ReactElement
     const props = assign({}, baseProps);
+
+    // 类静态 属性 defaultProps
     const defaultProps = Component.defaultProps;
     for (const propName in defaultProps) {
       if (props[propName] === undefined) {

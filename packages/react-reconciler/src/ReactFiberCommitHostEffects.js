@@ -256,19 +256,29 @@ export function commitShowHideHostTextInstance(node: Fiber, isHidden: boolean) {
   }
 }
 
+/**
+ * 将新的子节点注册到 Fragment 实例中
+ * @param {*} fiber 子节点的 Fiber 节点
+ * @param {*} parentFragmentInstances 父节点的 Fragment 实例数组
+ * @returns 
+ */
 export function commitNewChildToFragmentInstances(
   fiber: Fiber,
   parentFragmentInstances: null | Array<FragmentInstanceType>,
 ): void {
+  // 不是 HostComponent 或 HostText
   if (
     (fiber.tag !== HostComponent &&
       !(enableFragmentRefsTextNodes && fiber.tag === HostText)) ||
     // Only run fragment insertion effects for initial insertions
+    // 不是首次插入（更新）
     fiber.alternate !== null ||
+     // 父节点没有 Fragment 实例
     parentFragmentInstances === null
   ) {
     return;
   }
+  // 遍历所有 Fragment 实例
   for (let i = 0; i < parentFragmentInstances.length; i++) {
     const fragmentInstance = parentFragmentInstances[i];
     commitNewChildToFragmentInstance(fiber.stateNode, fragmentInstance);
@@ -439,6 +449,14 @@ function insertOrAppendPlacementNodeIntoContainer(
   }
 }
 
+/**
+ * 递归将 fiber 节点插入到 DOM 中
+ * @param {*} node 要插入的 fiber 节点
+ * @param {*} before 插入位置之前的节点
+ * @param {*} parent 父节点
+ * @param {*} parentFragmentInstances 父片段实例
+ * @returns 
+ */
 function insertOrAppendPlacementNode(
   node: Fiber,
   before: ?Instance,
@@ -447,6 +465,8 @@ function insertOrAppendPlacementNode(
 ): void {
   const {tag} = node;
   const isHost = tag === HostComponent || tag === HostText;
+
+  // Host 节点：直接插入 DOM
   if (isHost) {
     const stateNode = node.stateNode;
     if (before) {
@@ -454,11 +474,13 @@ function insertOrAppendPlacementNode(
     } else {
       appendChild(parent, stateNode);
     }
+    // 如果是 Fragment 子节点，更新 Fragment 实例引用
     if (enableFragmentRefs) {
       commitNewChildToFragmentInstances(node, parentFragmentInstances);
     }
     trackHostMutation();
     return;
+    // Portal：不遍历子节点
   } else if (tag === HostPortal) {
     // If the insertion itself is a portal, then we don't want to traverse
     // down its children. Instead, we'll get insertions from each child in
@@ -466,6 +488,7 @@ function insertOrAppendPlacementNode(
     return;
   }
 
+  // 处理 Singleton
   if (
     (supportsSingletons ? tag === HostSingleton : false) &&
     isSingletonScope(node.type)
@@ -475,10 +498,13 @@ function insertOrAppendPlacementNode(
     parent = node.stateNode;
   }
 
+  // 递归处理子节点
   const child = node.child;
   if (child !== null) {
     insertOrAppendPlacementNode(child, before, parent, parentFragmentInstances);
     let sibling = child.sibling;
+
+    // 处理所有兄弟节点
     while (sibling !== null) {
       insertOrAppendPlacementNode(
         sibling,
@@ -490,13 +516,20 @@ function insertOrAppendPlacementNode(
     }
   }
 }
-
+/**
+ * 将 fiber 节点插入到 DOM 树中
+ * @param {*} finishedWork 
+ * @returns 
+ */
 function commitPlacement(finishedWork: Fiber): void {
   // Recursively insert all host nodes into the parent.
+  // 查找宿主父级
   let hostParentFiber;
   let parentFragmentInstances = null;
   let parentFiber = finishedWork.return;
+
   while (parentFiber !== null) {
+    // 收集 Fragment 实例
     if (enableFragmentRefs && isFragmentInstanceParent(parentFiber)) {
       const fragmentInstance: FragmentInstanceType = parentFiber.stateNode;
       if (parentFragmentInstances === null) {
@@ -505,6 +538,7 @@ function commitPlacement(finishedWork: Fiber): void {
         parentFragmentInstances.push(fragmentInstance);
       }
     }
+    // 找到宿主父级
     if (isHostParent(parentFiber)) {
       hostParentFiber = parentFiber;
       break;
@@ -512,6 +546,7 @@ function commitPlacement(finishedWork: Fiber): void {
     parentFiber = parentFiber.return;
   }
 
+  // 不支持 mutation，直接返回
   if (!supportsMutation) {
     if (enableFragmentRefs) {
       commitImmutablePlacementNodeToFragmentInstances(
@@ -522,6 +557,7 @@ function commitPlacement(finishedWork: Fiber): void {
     return;
   }
 
+  //  检查是否有父级
   if (hostParentFiber == null) {
     throw new Error(
       'Expected to find a host parent. This error is likely caused by a bug ' +
@@ -531,6 +567,7 @@ function commitPlacement(finishedWork: Fiber): void {
 
   switch (hostParentFiber.tag) {
     case HostSingleton: {
+      // 插入到 singleton
       if (supportsSingletons) {
         const parent: Instance = hostParentFiber.stateNode;
         const before = getHostSibling(finishedWork);
@@ -547,10 +584,11 @@ function commitPlacement(finishedWork: Fiber): void {
       // Fall through
     }
     case HostComponent: {
+      // 插入到普通 DOM 元素
       const parent: Instance = hostParentFiber.stateNode;
       if (hostParentFiber.flags & ContentReset) {
         // Reset the text content of the parent before doing any insertions
-        resetTextContent(parent);
+        resetTextContent(parent); // 重置文本内容
         // Clear ContentReset from the effect tag
         hostParentFiber.flags &= ~ContentReset;
       }
@@ -558,6 +596,7 @@ function commitPlacement(finishedWork: Fiber): void {
       const before = getHostSibling(finishedWork);
       // We only have the top Fiber that was inserted but we need to recurse down its
       // children to find all the terminal nodes.
+      // 递归插入子节点
       insertOrAppendPlacementNode(
         finishedWork,
         before,
@@ -568,6 +607,7 @@ function commitPlacement(finishedWork: Fiber): void {
     }
     case HostRoot:
     case HostPortal: {
+      // 插入到容器
       const parent: Container = hostParentFiber.stateNode.containerInfo;
       const before = getHostSibling(finishedWork);
       insertOrAppendPlacementNodeIntoContainer(

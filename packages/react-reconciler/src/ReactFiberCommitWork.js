@@ -373,12 +373,18 @@ export function commitBeforeMutationEffects(
   resetAppearingViewTransitions();
 }
 
+/**
+ * 遍历 fiber 树，执行 Before Mutation 阶段开始时的处理
+ * @param {*} isViewTransitionEligible 
+ */
 function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
   // If this commit is eligible for a View Transition we look into all mutated subtrees.
   // TODO: We could optimize this by marking these with the Snapshot subtree flag in the render phase.
+  // 确定需要遍历的 subTreeMask
   const subtreeMask = isViewTransitionEligible
     ? BeforeAndAfterMutationTransitionMask
     : BeforeMutationMask;
+  // 遍历 fiber 树
   while (nextEffect !== null) {
     const fiber = nextEffect;
 
@@ -387,9 +393,11 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
     if (enableCreateEventHandleAPI || isViewTransitionEligible) {
       // TODO: Should wrap this in flags check, too, as optimization
       const deletions = fiber.deletions;
+      // 处理被删除的子节点（deletions）
       if (deletions !== null) {
         for (let i = 0; i < deletions.length; i++) {
           const deletion = deletions[i];
+          // 处理删除
           commitBeforeMutationEffectsDeletion(
             deletion,
             isViewTransitionEligible,
@@ -398,6 +406,7 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
       }
     }
 
+    // 当启用了 View Transition，且当前 Fiber 是首次插入
     if (
       enableViewTransition &&
       fiber.alternate === null &&
@@ -410,11 +419,15 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
       if (isViewTransitionEligible) {
         trackEnterViewTransitions(fiber);
       }
+      // 完成当前节点的处理
       commitBeforeMutationEffects_complete(isViewTransitionEligible);
       continue;
     }
 
     // TODO: This should really unify with the switch in commitBeforeMutationEffectsOnFiber recursively.
+    // OffscreenComponent 的可见性切换特殊处理
+    // Offscreen 组件（通常对应 <Activity mode="hidden"> 或 Suspense 的隐藏 primary 树）在可见性切换时，
+    // 不应触发子树的 getSnapshotBeforeUpdate，因为子树要么不可见，要么尚未激活。
     if (enableViewTransition && fiber.tag === OffscreenComponent) {
       const isModernRoot =
         disableLegacyMode || (fiber.mode & ConcurrentMode) !== NoMode;
@@ -428,12 +441,15 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
             isViewTransitionEligible
           ) {
             // Was previously mounted as visible but is now hidden.
+            // 从可见变为隐藏
             commitExitViewTransitions(current);
           }
           // Skip before mutation effects of the children because they're hidden.
+          // 隐藏子树不需要 before mutation 效果，直接跳过子节点
           commitBeforeMutationEffects_complete(isViewTransitionEligible);
           continue;
         } else if (current !== null && current.memoizedState !== null) {
+           // 从隐藏变为可见
           // Was previously mounted as hidden but is now visible.
           // Skip before mutation effects of the children because we don't want
           // to trigger updates of any nested view transitions and we shouldn't
@@ -448,6 +464,7 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
       }
     }
 
+    // 常规遍历：向下或完成
     const child = fiber.child;
     if ((fiber.subtreeFlags & subtreeMask) !== NoFlags && child !== null) {
       child.return = fiber;
@@ -466,8 +483,9 @@ function commitBeforeMutationEffects_begin(isViewTransitionEligible: boolean) {
 }
 
 /**
- * 遍历处理 BeforeMutation 阶段需要处理的 fibers
- * @param {*} isViewTransitionEligible 
+ * 完成当前 fiber 的 Before Mutation Effects
+//  * 从下往上遍历，找兄弟节点
+ * @param {*} isViewTransitionEligible 是否是 View Transition 条件
  * @returns 
  */
 function commitBeforeMutationEffects_complete(
@@ -486,14 +504,16 @@ function commitBeforeMutationEffects_complete(
       return;
     }
 
+    // 遍历	优先处理兄弟节点，没有则返回父节点
+
     nextEffect = fiber.return;
   }
 }
 
 /**
- * BeforeMutation 阶段
- * @param {*} finishedWork 
- * @param {*} isViewTransitionEligible 
+ * 执行单个 fiber 的 Before Mutation Effects
+ * @param {*} finishedWork 已完成的fiber
+ * @param {*} isViewTransitionEligible 是否是 View Transition 条件
  */
 function commitBeforeMutationEffectsOnFiber(
   finishedWork: Fiber,
@@ -502,19 +522,22 @@ function commitBeforeMutationEffectsOnFiber(
   const current = finishedWork.alternate;
   const flags = finishedWork.flags;
 
-  // 处理焦点 blur      
+  // 处理焦点 beforeblur      
+  // 启用了事件处理 API
   if (enableCreateEventHandleAPI) {
+    // 还未触发过blur  、有焦点元素
     if (!shouldFireAfterActiveInstanceBlur && focusedInstanceHandle !== null) {
       // Check to see if the focused element was inside of a hidden (Suspense) subtree.
       // TODO: Move this out of the hot path using a dedicated effect tag.
       // TODO: This should consider Offscreen in general and not just SuspenseComponent.
+      // suspense组件，且当前fiber是隐藏的
       if (
         finishedWork.tag === SuspenseComponent &&
         isSuspenseBoundaryBeingHidden(current, finishedWork) &&
         // $FlowFixMe[incompatible-call] found when upgrading Flow
         doesFiberContain(finishedWork, focusedInstanceHandle)
       ) {
-        shouldFireAfterActiveInstanceBlur = true;
+        shouldFireAfterActiveInstanceBlur = true; // 标记为需要触发 blur 事件
         beforeActiveInstanceBlur(finishedWork);
       }
     }
@@ -527,6 +550,7 @@ function commitBeforeMutationEffectsOnFiber(
     case SimpleMemoComponent: {
       // 处理 useEffectEvent 更新  
       // fiber标记了 Update 4
+      // enableEffectEventMutationPhase 控制是否在 mutation 阶段执行 useEffectEvent 的更新
       if (!enableEffectEventMutationPhase && (flags & Update) !== NoFlags) {
         const updateQueue: FunctionComponentUpdateQueue | null =
           (finishedWork.updateQueue: any);
@@ -573,11 +597,14 @@ function commitBeforeMutationEffectsOnFiber(
       break;
     case ViewTransitionComponent:
       if (enableViewTransition) {
+        // 检查当前更新是否在 View Transition 上下文中
         if (isViewTransitionEligible) {
           if (current === null) {
+            // 挂载：已由 Placement effect 处理
             // This is a new mount. We should have handled this as part of the
             // Placement effect or it is deeper inside a entering transition.
           } else {
+            // 更新：可能需要交叉淡入淡出
             // Something may have mutated within this subtree. This might need to cause
             // a cross-fade of this parent. We first assign old names to the
             // previous tree in the before mutation phase in case we need to.
@@ -602,27 +629,36 @@ function commitBeforeMutationEffectsOnFiber(
   }
 }
 
+/**
+ * 处理被删除 fiber 的 Before Mutation Effects
+ * @param {*} deletion  被删除的fiber
+ * @param {*} isViewTransitionEligible 是否在 View Transition 上下文中
+ */
 function commitBeforeMutationEffectsDeletion(
   deletion: Fiber,
   isViewTransitionEligible: boolean,
 ) {
+  // 处理焦点 blur
+  // 如果被删除的fiber包含在当前焦点元素
+  // 需要在删除前触发blur事件
   if (enableCreateEventHandleAPI) {
     // TODO (effects) It would be nice to avoid calling doesFiberContain()
     // Maybe we can repurpose one of the subtreeFlags positions for this instead?
     // Use it to store which part of the tree the focused instance is in?
     // This assumes we can safely determine that instance during the "render" phase.
     if (doesFiberContain(deletion, ((focusedInstanceHandle: any): Fiber))) {
-      shouldFireAfterActiveInstanceBlur = true;
+      shouldFireAfterActiveInstanceBlur = true; // 标记需要触发blur事件
       beforeActiveInstanceBlur(deletion);
     }
   }
+  // 处理 View Transition 退出
   if (isViewTransitionEligible) {
     commitExitViewTransitions(deletion);
   }
 }
 
 /**
- * 执行 layout effect
+ * 根据 fiber 类型执行对应的 Layout effects
  * @param {*} finishedRoot 
  * @param {*} current 
  * @param {*} finishedWork 
@@ -1352,10 +1388,15 @@ function detachFiberMutation(fiber: Fiber) {
   fiber.return = null;
 }
 
+/**
+ * 彻底清理一个 Fiber 节点及其相关引用
+ * @param {*} fiber 
+ */
 function detachFiberAfterEffects(fiber: Fiber) {
   const alternate = fiber.alternate;
+  // 递归处理 alternate（双缓冲中的另一棵树）
   if (alternate !== null) {
-    fiber.alternate = null;
+    fiber.alternate = null; // 断开 alternate 的引用
     detachFiberAfterEffects(alternate);
   }
 
@@ -1365,6 +1406,7 @@ function detachFiberAfterEffects(fiber: Fiber) {
   // object will not have any of these fields. It will only be connected to
   // the fiber tree via a single link at the root. So if this level alone is
   // sufficient to fix memory issues, that bodes well for our plans.
+  // 清空树结构指针
   fiber.child = null;
   fiber.deletions = null;
   fiber.sibling = null;
@@ -1373,9 +1415,13 @@ function detachFiberAfterEffects(fiber: Fiber) {
   // tree, which has its own pointers to children, parents, and siblings.
   // The other host nodes also point back to fibers, so we should detach that
   // one, too.
+  // 处理宿主实例（DOM 节点）
   if (fiber.tag === HostComponent) {
+    // 如果当前 Fiber 是 HostComponent（即原生 DOM 元素，如 div、span），则获取其 stateNode（真实的 DOM 实例）
     const hostInstance: Instance = fiber.stateNode;
     if (hostInstance !== null) {
+      // 移除 DOM 节点上 React 内部附加的属性
+      // 清除事件监听器
       detachDeletedInstance(hostInstance);
     }
   }
@@ -1388,6 +1434,7 @@ function detachFiberAfterEffects(fiber: Fiber) {
   // Theoretically, nothing in here should be necessary, because we already
   // disconnected the fiber from the tree. So even if something leaks this
   // particular fiber, it won't leak anything else.
+  // 清空其他字段
   fiber.return = null;
   fiber.dependencies = null;
   fiber.memoizedProps = null;
@@ -1759,8 +1806,10 @@ function commitDeletionEffectsOnFiber(
     }
     case ClassComponent: {
       if (!offscreenSubtreeWasHidden) {
+        // 解绑 ref
         safelyDetachRef(deletedFiber, nearestMountedAncestor);
         const instance = deletedFiber.stateNode;
+        // 调用 componentWillUnmount（如果存在）
         if (typeof instance.componentWillUnmount === 'function') {
           safelyCallComponentWillUnmount(
             deletedFiber,
@@ -2106,10 +2155,13 @@ function recursivelyTraverseMutationEffects(
   // 遍历子节点
   if (parentFiber.subtreeFlags & (MutationMask | Cloned)) {
     let child = parentFiber.child;
+
+    // 遍历 先处理子节点，再处理兄弟节点
     while (child !== null) {
       commitMutationEffectsOnFiber(child, root, lanes);
       child = child.sibling; // 下一个兄弟节点
     }
+
   }
 }
 
@@ -2146,7 +2198,9 @@ function commitMutationEffectsOnFiber(
       // This isn't a supported use case, so we can re-consider it,
       // but this was the behavior we originally shipped.
       // 处理 useEffectEvent (如果启用)
+      // 控制是否在 mutation 阶段执行 useEffectEvent 的更新
       if (enableEffectEventMutationPhase) {
+        // React 会在 commit 的 mutation 阶段就完成事件函数的更新
         if (flags & Update) {
           const updateQueue: FunctionComponentUpdateQueue | null =
             (finishedWork.updateQueue: any);
@@ -2155,14 +2209,17 @@ function commitMutationEffectsOnFiber(
           if (eventPayloads !== null) {
             for (let ii = 0; ii < eventPayloads.length; ii++) {
               const {ref, nextImpl} = eventPayloads[ii];
+              // 完成了 useEffectEvent 返回函数的“指向更新”
               ref.impl = nextImpl;
             }
           }
         }
       }
-      // 递归遍历子节点
+      // 递归处理子节点的 Mutation 效果
+      // 继续向下处理子 Fiber 的 DOM 变更、ref 清理等 mutation 工作
       recursivelyTraverseMutationEffects(root, finishedWork, lanes);
-      // 提交子节点的 reconciliation effects
+
+      // 负责处理当前 Fiber 自身的 Placement
       commitReconciliationEffects(finishedWork, lanes);
 
       if (flags & Update) {
@@ -2862,7 +2919,7 @@ function commitReconciliationEffects(
     // inserted, before any life-cycles like componentDidMount gets called.
     // TODO: findDOMNode doesn't rely on this any more but isMounted does
     // and isMounted is deprecated anyway so we should be able to kill this.
-    finishedWork.flags &= ~Placement;
+    finishedWork.flags &= ~Placement; // 清除 Placement 标志
   }
   if (flags & Hydrating) {
     finishedWork.flags &= ~Hydrating;
@@ -2919,6 +2976,13 @@ function recursivelyTraverseAfterMutationEffects(
   }
 }
 
+/**
+ * 执行 Mutation 阶段之后，针对特定 fiber 类型的 effects
+ * @param {*} finishedWork 
+ * @param {*} root 
+ * @param {*} lanes 
+ * @returns 
+ */
 function commitAfterMutationEffectsOnFiber(
   finishedWork: Fiber,
   root: FiberRoot,
@@ -3066,6 +3130,12 @@ function commitAfterMutationEffectsOnFiber(
   }
 }
 
+/**
+ * 执行 Layout 阶段的 effects
+ * @param {*} finishedWork 
+ * @param {*} root 
+ * @param {*} committedLanes 
+ */
 export function commitLayoutEffects(
   finishedWork: Fiber,
   root: FiberRoot,
@@ -3096,6 +3166,7 @@ function recursivelyTraverseLayoutEffects(
 ) {
   if (parentFiber.subtreeFlags & LayoutMask) {
     let child = parentFiber.child;
+    // 优先遍历子节点，再遍历兄弟节点
     while (child !== null) {
       const current = child.alternate;
       commitLayoutEffectOnFiber(root, current, child, lanes);
@@ -3714,7 +3785,7 @@ function recursivelyTraversePassiveMountEffects(
 let inHydratedSubtree = false;
 
 /**
- * 在 Passive 阶段，为 fiber 节点执行 Passive Effects 的 Mount
+ * 执行 Passive Mount Effects（useEffect 回调）
  * @param {*} finishedRoot 完成的根节点
  * @param {*} finishedWork 完成的 fiber
  * @param {*} committedLanes 	已提交的 lanes
@@ -3767,21 +3838,21 @@ function commitPassiveMountOnFiber(
       // render time. We do this after the fact in the passive effect to avoid the overhead of this
       // getting in the way of the render characteristics and avoid the overhead of unwinding
       // uncommitted renders.
-      if (
-        enableProfilerTimer &&
-        enableComponentPerformanceTrack &&
-        (finishedWork.mode & ProfileMode) !== NoMode &&
-        ((finishedWork.actualStartTime: any): number) > 0 &&
-        (finishedWork.flags & PerformedWork) !== NoFlags
-      ) {
-        logComponentRender(
-          finishedWork,
-          ((finishedWork.actualStartTime: any): number),
-          endTime,
-          inHydratedSubtree,
-          committedLanes,
-        );
-      }
+      // if (
+      //   enableProfilerTimer &&
+      //   enableComponentPerformanceTrack &&
+      //   (finishedWork.mode & ProfileMode) !== NoMode &&
+      //   ((finishedWork.actualStartTime: any): number) > 0 &&
+      //   (finishedWork.flags & PerformedWork) !== NoFlags
+      // ) {
+      //   logComponentRender(
+      //     finishedWork,
+      //     ((finishedWork.actualStartTime: any): number),
+      //     endTime,
+      //     inHydratedSubtree,
+      //     committedLanes,
+      //   );
+      // }
 
       // 递归遍历子树
       recursivelyTraversePassiveMountEffects(
@@ -4074,9 +4145,9 @@ function commitPassiveMountOnFiber(
         endTime,
       );
 
-      if (enableProfilerTimer && enableComponentPerformanceTrack) {
-        inHydratedSubtree = wasInHydratedSubtree;
-      }
+      // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+      //   inHydratedSubtree = wasInHydratedSubtree;
+      // }
       break;
     }
     case LegacyHiddenComponent: {
@@ -4927,6 +4998,10 @@ function accumulateSuspenseyCommitOnFiber(
   }
 }
 
+/**
+ * 在 删除某个 Fiber 的子节点 后，清理其 alternate（双缓冲中的另一棵树）上相关的 sibling 和 child 指针
+ * @param {*} parentFiber 
+ */
 function detachAlternateSiblings(parentFiber: Fiber) {
   // A fiber was deleted from this parent fiber, but it's still part of the
   // previous (alternate) parent fiber's list of children. Because children
@@ -4943,7 +5018,10 @@ function detachAlternateSiblings(parentFiber: Fiber) {
   if (previousFiber !== null) {
     let detachedChild = previousFiber.child;
     if (detachedChild !== null) {
+      // 切断 alternate 父节点与子节点的链接
       previousFiber.child = null;
+
+      // 遍历整个子节点链表
       do {
         // $FlowFixMe[incompatible-use] found when upgrading Flow
         const detachedSibling = detachedChild.sibling;
@@ -4955,11 +5033,17 @@ function detachAlternateSiblings(parentFiber: Fiber) {
   }
 }
 
+/**
+ * 递归遍历子树，执行 Passive Unmount Effects
+ * @param {*} parentFiber 
+ */
 function recursivelyTraversePassiveUnmountEffects(parentFiber: Fiber): void {
   // Deletions effects can be scheduled on any fiber type. They need to happen
   // before the children effects have fired.
   const deletions = parentFiber.deletions;
 
+  // 处理 deletions
+  // 处理被删除的子节点
   if ((parentFiber.flags & ChildDeletion) !== NoFlags) {
     if (deletions !== null) {
       for (let i = 0; i < deletions.length; i++) {
@@ -4967,32 +5051,36 @@ function recursivelyTraversePassiveUnmountEffects(parentFiber: Fiber): void {
         const prevEffectStart = pushComponentEffectStart();
         // TODO: Convert this to use recursion
         nextEffect = childToDelete;
+        // 对每个被删除的子 Fiber 执行其子树内的所有被动效果卸载
         commitPassiveUnmountEffectsInsideOfDeletedTree_begin(
           childToDelete,
           parentFiber,
         );
-        if (
-          enableProfilerTimer &&
-          enableProfilerCommitHooks &&
-          enableComponentPerformanceTrack &&
-          (childToDelete.mode & ProfileMode) !== NoMode &&
-          componentEffectStartTime >= 0 &&
-          componentEffectEndTime >= 0 &&
-          componentEffectEndTime - componentEffectStartTime > 0.05
-        ) {
-          logComponentUnmount(
-            childToDelete,
-            componentEffectStartTime,
-            componentEffectEndTime,
-          );
-        }
+        // if (
+        //   enableProfilerTimer &&
+        //   enableProfilerCommitHooks &&
+        //   enableComponentPerformanceTrack &&
+        //   (childToDelete.mode & ProfileMode) !== NoMode &&
+        //   componentEffectStartTime >= 0 &&
+        //   componentEffectEndTime >= 0 &&
+        //   componentEffectEndTime - componentEffectStartTime > 0.05
+        // ) {
+        //   logComponentUnmount(
+        //     childToDelete,
+        //     componentEffectStartTime,
+        //     componentEffectEndTime,
+        //   );
+        // }
         popComponentEffectStart(prevEffectStart);
       }
     }
+    // 清理 parentFiber.alternate 上的兄弟节点引用，防止内存泄漏
     detachAlternateSiblings(parentFiber);
   }
 
   // TODO: Split PassiveMask into separate masks for mount and unmount?
+  // 递归遍历子树
+  // 递归处理存活的子节点
   if (parentFiber.subtreeFlags & PassiveMask) {
     let child = parentFiber.child;
     while (child !== null) {
@@ -5002,7 +5090,11 @@ function recursivelyTraversePassiveUnmountEffects(parentFiber: Fiber): void {
   }
 }
 
+/**
+ * 执行 Passive Unmount Effects（useEffect 清理函数）
+ */
 function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
+  // 记录性能数据 
   const prevEffectStart = pushComponentEffectStart();
   const prevEffectDuration = pushComponentEffectDuration();
   const prevEffectErrors = pushComponentEffectErrors();
@@ -5012,6 +5104,8 @@ function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
     case ForwardRef:
     case SimpleMemoComponent: {
       recursivelyTraversePassiveUnmountEffects(finishedWork);
+
+      // 如果有 Passive 标记，执行清理函数
       if (finishedWork.flags & Passive) {
         commitHookPassiveUnmountEffects(
           finishedWork,
@@ -5053,6 +5147,7 @@ function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
 
       const isHidden = nextState !== null;
 
+      // hidden 断开连接处理
       if (
         isHidden &&
         instance._visibility & OffscreenPassiveEffectsConnected &&
@@ -5069,21 +5164,21 @@ function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
 
         recursivelyTraverseDisconnectPassiveEffects(finishedWork);
 
-        if (
-          enableProfilerTimer &&
-          enableProfilerCommitHooks &&
-          enableComponentPerformanceTrack &&
-          (finishedWork.mode & ProfileMode) !== NoMode &&
-          componentEffectStartTime >= 0 &&
-          componentEffectEndTime >= 0 &&
-          componentEffectEndTime - componentEffectStartTime > 0.05
-        ) {
-          logComponentDisappeared(
-            finishedWork,
-            componentEffectStartTime,
-            componentEffectEndTime,
-          );
-        }
+        // if (
+        //   enableProfilerTimer &&
+        //   enableProfilerCommitHooks &&
+        //   enableComponentPerformanceTrack &&
+        //   (finishedWork.mode & ProfileMode) !== NoMode &&
+        //   componentEffectStartTime >= 0 &&
+        //   componentEffectEndTime >= 0 &&
+        //   componentEffectEndTime - componentEffectStartTime > 0.05
+        // ) {
+        //   logComponentDisappeared(
+        //     finishedWork,
+        //     componentEffectStartTime,
+        //     componentEffectEndTime,
+        //   );
+        // }
       } else {
         recursivelyTraversePassiveUnmountEffects(finishedWork);
       }
@@ -5096,23 +5191,23 @@ function commitPassiveUnmountOnFiber(finishedWork: Fiber): void {
     }
   }
 
-  if (
-    enableProfilerTimer &&
-    enableProfilerCommitHooks &&
-    enableComponentPerformanceTrack &&
-    (finishedWork.mode & ProfileMode) !== NoMode &&
-    componentEffectStartTime >= 0 &&
-    componentEffectEndTime >= 0 &&
-    (componentEffectSpawnedUpdate || componentEffectDuration > 0.05)
-  ) {
-    logComponentEffect(
-      finishedWork,
-      componentEffectStartTime,
-      componentEffectEndTime,
-      componentEffectDuration,
-      componentEffectErrors,
-    );
-  }
+  // if (
+  //   enableProfilerTimer &&
+  //   enableProfilerCommitHooks &&
+  //   enableComponentPerformanceTrack &&
+  //   (finishedWork.mode & ProfileMode) !== NoMode &&
+  //   componentEffectStartTime >= 0 &&
+  //   componentEffectEndTime >= 0 &&
+  //   (componentEffectSpawnedUpdate || componentEffectDuration > 0.05)
+  // ) {
+  //   logComponentEffect(
+  //     finishedWork,
+  //     componentEffectStartTime,
+  //     componentEffectEndTime,
+  //     componentEffectDuration,
+  //     componentEffectErrors,
+  //   );
+  // }
 
   popComponentEffectStart(prevEffectStart);
   popComponentEffectDuration(prevEffectDuration);
@@ -5231,6 +5326,11 @@ export function disconnectPassiveEffect(finishedWork: Fiber): void {
   popComponentEffectErrors(prevEffectErrors);
 }
 
+/**
+ * 遍历被删除的子树，从上到下执行 passive unmount effects
+ * @param {*} deletedSubtreeRoot 
+ * @param {*} nearestMountedAncestor 
+ */
 function commitPassiveUnmountEffectsInsideOfDeletedTree_begin(
   deletedSubtreeRoot: Fiber,
   nearestMountedAncestor: Fiber | null,
@@ -5255,9 +5355,16 @@ function commitPassiveUnmountEffectsInsideOfDeletedTree_begin(
   }
 }
 
+/**
+ * 清理被删除子树中每个 fiber 的字段
+ * @param {*} deletedSubtreeRoot 
+ * @returns 
+ */
 function commitPassiveUnmountEffectsInsideOfDeletedTree_complete(
   deletedSubtreeRoot: Fiber,
 ) {
+
+  // 从下到上遍历被删除的子树 
   while (nextEffect !== null) {
     const fiber = nextEffect;
     const sibling = fiber.sibling;
@@ -5266,18 +5373,23 @@ function commitPassiveUnmountEffectsInsideOfDeletedTree_complete(
     // Recursively traverse the entire deleted tree and clean up fiber fields.
     // This is more aggressive than ideal, and the long term goal is to only
     // have to detach the deleted tree at the root.
+    // 清理 fiber 字段
     detachFiberAfterEffects(fiber);
+
+     // 如果是根节点，结束
     if (fiber === deletedSubtreeRoot) {
       nextEffect = null;
       return;
     }
 
+    // 遍历兄弟节点
     if (sibling !== null) {
       sibling.return = returnFiber;
       nextEffect = sibling;
       return;
     }
 
+    // 没有兄弟节点，返回父节点
     nextEffect = returnFiber;
   }
 }
