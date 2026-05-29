@@ -1704,6 +1704,13 @@ function rerenderReducer<S, I, A>(
   return [newState, dispatch];
 }
 
+/**
+ * 挂载 useSyncExternalStore hook
+ * @param {*} subscribe 订阅函数，返回取消订阅函数
+ * @param {*} getSnapshot 获取当前状态的函数
+ * @param {*} getServerSnapshot 服务器端获取当前状态的函数,可选
+ * @returns 当前状态
+ */
 function mountSyncExternalStore<T>(
   subscribe: (() => void) => () => void,
   getSnapshot: () => T,
@@ -1721,6 +1728,7 @@ function mountSyncExternalStore<T>(
           'server-rendered content. Will revert to client rendering.',
       );
     }
+    // 服务器端渲染时，使用 getServerSnapshot 获取当前状态
     nextSnapshot = getServerSnapshot();
     if (__DEV__) {
       if (!didWarnUncachedGetSnapshot) {
@@ -1733,6 +1741,7 @@ function mountSyncExternalStore<T>(
       }
     }
   } else {
+    // 客户端渲染时，使用 getSnapshot 获取当前状态
     nextSnapshot = getSnapshot();
     if (__DEV__) {
       if (!didWarnUncachedGetSnapshot) {
@@ -1760,6 +1769,7 @@ function mountSyncExternalStore<T>(
       );
     }
 
+    // 如果当前渲染阶段不是阻塞渲染阶段，则调度一致性检查
     const rootRenderLanes = getWorkInProgressRootRenderLanes();
     if (!includesBlockingLane(rootRenderLanes)) {
       pushStoreConsistencyCheck(fiber, getSnapshot, nextSnapshot);
@@ -1769,11 +1779,13 @@ function mountSyncExternalStore<T>(
   // Read the current snapshot from the store on every render. This breaks the
   // normal rules of React, and only works because store updates are
   // always synchronous.
+  // 记录当前状态
   hook.memoizedState = nextSnapshot;
   const inst: StoreInstance<T> = {
     value: nextSnapshot,
     getSnapshot,
   };
+
   hook.queue = inst;
 
   // Schedule an effect to subscribe to the store.
@@ -1784,7 +1796,7 @@ function mountSyncExternalStore<T>(
   // clean-up function, and we track the deps correctly, we can call pushEffect
   // directly, without storing any additional state. For the same reason, we
   // don't need to set a static flag, either.
-  fiber.flags |= PassiveEffect;
+  fiber.flags |= PassiveEffect; // 2048 标记为被动效果
   pushSimpleEffect(
     HookHasEffect | HookPassive,
     createEffectInstance(),
@@ -1792,6 +1804,7 @@ function mountSyncExternalStore<T>(
     null,
   );
 
+  // 返回当前状态
   return nextSnapshot;
 }
 
@@ -1907,6 +1920,13 @@ function pushStoreConsistencyCheck<T>(
   }
 }
 
+/**
+ * 更新 store 实例的字段 value 和 getSnapshot
+ * @param {*} fiber 当前fiber
+ * @param {*} inst 存储实例 { value, getSnapshot }
+ * @param {*} nextSnapshot 新的快照值
+ * @param {*} getSnapshot 获取快照的函数
+ */
 function updateStoreInstance<T>(
   fiber: Fiber,
   inst: StoreInstance<T>,
@@ -1914,8 +1934,8 @@ function updateStoreInstance<T>(
   getSnapshot: () => T,
 ): void {
   // These are updated in the passive phase
-  inst.value = nextSnapshot;
-  inst.getSnapshot = getSnapshot;
+  inst.value = nextSnapshot; // 更新 value
+  inst.getSnapshot = getSnapshot; // 更新 getSnapshot 函数
 
   // Something may have been mutated in between render and commit. This could
   // have been in an event that fired before the passive effects, or it could
@@ -1923,22 +1943,33 @@ function updateStoreInstance<T>(
   // snapsho and getSnapshot values to bail out. We need to check one more time.
   if (checkIfSnapshotChanged(inst)) {
     // Force a re-render.
+    // 强制重新渲染
     // We intentionally don't log update times and stacks here because this
     // was not an external trigger but rather an internal one.
     forceStoreRerender(fiber);
   }
 }
 
+/**
+ * 订阅外部 store 的变化
+ * @param {*} fiber 当前fiber
+ * @param {*} inst 存储实例 { value, getSnapshot }
+ * @param {*} subscribe 订阅函数 useExternalStore的第一个参数
+ */
 function subscribeToStore<T>(
   fiber: Fiber,
   inst: StoreInstance<T>,
   subscribe: (() => void) => () => void,
 ): any {
+
+  // 创建变化处理函数  
   const handleStoreChange = () => {
     // The store changed. Check if the snapshot changed since the last time we
     // read from the store.
+    // 检查快照是否变化
     if (checkIfSnapshotChanged(inst)) {
       // Force a re-render.
+      // 强制重新渲染
       startUpdateTimerByLane(SyncLane, 'updateSyncExternalStore()', fiber);
       forceStoreRerender(fiber);
     }

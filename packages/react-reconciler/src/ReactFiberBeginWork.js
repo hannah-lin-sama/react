@@ -1195,20 +1195,26 @@ function updateActivityComponent(
       if (nextProps.mode === 'hidden') {
         // SSR doesn't render hidden Activity so it shouldn't hydrate,
         // even at offscreen lane. Defer to a client rendered offscreen lane.
+        // 原因：服务端渲染不会生成隐藏的 Activity 内容（因为隐藏内容不需输出）
+        // 直接创建一个 Offscreen 子组件（标记为隐藏）
         const primaryChildFragment = mountActivityChildren(
           workInProgress,
           nextProps,
           renderLanes,
         );
+        // 以低优先级（Offscreen 车道）在客户端再渲染一次
         workInProgress.lanes = laneToLanes(OffscreenLane);
+        // 跳过子节点的进一步处理
         return bailoutOffscreenComponent(null, primaryChildFragment);
       } else {
         // 水合 dehydrated Activity
         // We must push the suspense handler context *before* attempting to
         // hydrate, to avoid a mismatch in case it errors.
         pushDehydratedActivitySuspenseHandler(workInProgress);
+        // 获取服务端遗留的脱水节点（dehydrated）
         const dehydrated: ActivityInstance =
           claimNextHydratableActivityInstance(workInProgress);
+          // 复用服务端 DOM 并完成客户端水合
         return mountDehydratedActivityComponent(
           workInProgress,
           dehydrated,
@@ -1217,18 +1223,21 @@ function updateActivityComponent(
       }
     }
 
+    // 常规客户端渲染
     return mountActivityChildren(workInProgress, nextProps, renderLanes);
 
     // 2、更新路径 
   } else {
     // This is an update.
 
+    // 处理已脱水状态
     // Special path for hydration
     const prevState: null | ActivityState = current.memoizedState;
 
     if (prevState !== null) {
-      // 处理 dehydrated 状态
+      // 如果当前 Activity 边界尚未完成水合（存在 dehydrated 字段）
       const dehydrated = prevState.dehydrated;
+     
       return updateDehydratedActivityComponent(
         current,
         workInProgress,
@@ -1261,14 +1270,17 @@ function updateActivityComponent(
       markRenderDerivedCause(workInProgress);
     }
 
+     // 复用或创建 Offscreen Fiber，并传入最新的 mode 和 children
     const primaryChildFragment = updateWorkInProgressOffscreenFiber(
       currentChild,
       offscreenChildProps,
     );
 
+    // 将 Offscreen 组件的 ref 设置为 Activity 的 ref
     primaryChildFragment.ref = workInProgress.ref;
     workInProgress.child = primaryChildFragment;
     primaryChildFragment.return = workInProgress;
+    // 将 Offscreen 组件挂载为 workInProgress.child，并返回它，以便 beginWork 继续遍历该 Offscreen 子树
     return primaryChildFragment;
   }
 }

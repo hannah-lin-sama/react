@@ -2770,18 +2770,25 @@ function renderRootSync(
             exitStatus = RootSuspendedAtTheShell;
             break outer;
           }
-          case SuspendedOnImmediate:
-          case SuspendedOnData:
-          case SuspendedOnAction:
-          case SuspendedOnDeprecatedThrowPromise: {
+          case SuspendedOnImmediate: // 同步渲染中挂起（非并发，例如 legacy 模式）
+          case SuspendedOnData: // 在数据请求中挂起（例如 use 或 Suspense 数据获取）
+          case SuspendedOnAction: // 在 useActionState 的 action 中挂起
+          case SuspendedOnDeprecatedThrowPromise: { // 旧版直接 throw promise 的用法（已不推荐）
+            // 处理因组件挂起（Suspend）而抛出的异常
+
+            // 检测当前是否有 Suspense 边界处理器
             if (getSuspenseHandler() === null) {
+              // 没有找到任何 Suspense 边界，意味着挂起发生在根之外（即整个应用没有 fallback）
               didSuspendInShell = true;
             }
             const reason = workInProgressSuspendedReason;
-            workInProgressSuspendedReason = NotSuspended;
+            workInProgressSuspendedReason = NotSuspended; // // 重置全局挂起状态
             workInProgressThrownValue = null;
-            // 抛出并展开工作循环
+
+            //  展开工作循环，向上寻找边界并显示 fallback
             throwAndUnwindWorkLoop(root, unitOfWork, thrownValue, reason);
+
+            // 预渲染特殊处理
             if (
               shouldYieldForPrerendering &&
               workInProgressRootIsPrerendering
@@ -2791,6 +2798,7 @@ function renderRootSync(
               // render will be blocked from committing. Yield to the main
               // thread so we can switch to prerendering using the concurrent
               // work loop.
+              // 在预渲染模式下，如果挂起且没有边界，则暂停当前渲染
               exitStatus = RootInProgress;
               break outer;
             }
@@ -3354,10 +3362,10 @@ function replayBeginWork(unitOfWork: Fiber): null | Fiber {
 
 /**
  * 处理渲染过程中的异常/挂起，展开栈并找到处理边界
- * @param {*} root 
+ * @param {*} root 当前 Fiber 根节点
  * @param {*} unitOfWork 抛出异常的 fiber
- * @param {*} thrownValue 抛出的值
- * @param {*} suspendedReason 挂起原因
+ * @param {*} thrownValue 抛出的值（Promise、Error、React 内部标记等）
+ * @param {*} suspendedReason 挂起原因（由 handleThrow 设置
  * @returns 
  */
 function throwAndUnwindWorkLoop(
@@ -3371,6 +3379,8 @@ function throwAndUnwindWorkLoop(
   //
   // Return to the normal work loop. This will unwind the stack, and potentially
   // result in showing a fallback.
+  // 重置当前工作循环的挂起状态
+  // 清除与当前 Fiber 相关的挂起临时变量
   resetSuspendedWorkLoopOnUnwind(unitOfWork);
 
   const returnFiber = unitOfWork.return;
@@ -3378,6 +3388,7 @@ function throwAndUnwindWorkLoop(
     // Find and mark the nearest Suspense or error boundary that can handle
     // this "exception".
     // 查找并标记处理边界
+    // 向上遍历父链，找到最近的 Suspense 组件 或 Error Boundary
     const didFatal = throwException(
       root,
       returnFiber,
@@ -3385,7 +3396,9 @@ function throwAndUnwindWorkLoop(
       thrownValue,
       workInProgressRootRenderLanes,
     );
+    // didFatal 表示是否发生致命错误
     if (didFatal) {
+      // 记录错误并停止渲染
       panicOnRootError(root, thrownValue);
       return;
     }
@@ -3394,8 +3407,10 @@ function throwAndUnwindWorkLoop(
     // when accessing the `componentDidCatch` property of an error boundary
     // throws an error. A weird edge case. There's a regression test for this.
     // To prevent an infinite loop, bubble the error up to the next parent.
+    // 如果 throwException 自身抛出错误（例如访问 componentDidCatch 时出错），则继续向上冒泡
     if (returnFiber !== null) {
       workInProgress = returnFiber;
+      // 重新抛出错误
       throw error;
     } else {
       panicOnRootError(root, thrownValue);
@@ -3414,6 +3429,7 @@ function throwAndUnwindWorkLoop(
       getIsHydrating() ||
       suspendedReason === SuspendedOnError
     ) {
+      // 水合或普通错误必须跳过兄弟
       skipSiblings = true;
       // We intentionally don't set workInProgressRootDidSkipSuspendedSiblings,
       // because we don't want to trigger another prerender attempt.
@@ -3425,6 +3441,8 @@ function throwAndUnwindWorkLoop(
     ) {
       // This is not a prerender. Skip the siblings during this render. A
       // separate prerender will be scheduled for later.
+     
+      // 非预渲染且无 Offscreen 车道，跳过兄弟
       skipSiblings = true; // 跳过兄弟节点
       workInProgressRootDidSkipSuspendedSiblings = true;
 
@@ -3440,6 +3458,7 @@ function throwAndUnwindWorkLoop(
       // We should start rendering that even before the data streams in so we
       // can prerender the siblings.
       // 标记 Suspense 边界重试
+      // 如果挂起原因是数据/action/立即/旧式Promise，则为 Suspense 边界标记 ScheduleRetry
       if (
         suspendedReason === SuspendedOnData || // 2
         suspendedReason === SuspendedOnAction || // 9
@@ -3448,14 +3467,16 @@ function throwAndUnwindWorkLoop(
       ) {
         const boundary = getSuspenseHandler();
         if (boundary !== null && boundary.tag === SuspenseComponent) {
-          boundary.flags |= ScheduleRetry;
+          boundary.flags |= ScheduleRetry; // 标记重试
         }
       }
     } else {
       // This is a prerender. Don't skip the siblings.
+      // 预渲染模式下不跳过兄弟
       skipSiblings = false;
     }
 
+    // 执行展开
     unwindUnitOfWork(unitOfWork, skipSiblings);
   } else {
     // Although the fiber suspended, we're intentionally going to commit it in
@@ -3467,6 +3488,7 @@ function throwAndUnwindWorkLoop(
     // synchronous render. Because that will allow us to mutate the tree as we
     // go instead of buffering mutations until the end. Though it's unclear if
     // this particular path is how that would be implemented.
+    // / 直接完成当前单元（Legacy 或特殊路径）
     completeUnitOfWork(unitOfWork);
   }
 }
@@ -5231,7 +5253,12 @@ export function captureCommitPhaseError(
     );
   }
 }
-
+/**
+ * 为 Suspense 边界的挂起 Promise（wakeable）添加“ping”监听器
+ * @param {*} root  当前 Fiber 根节点
+ * @param {*} wakeable 被抛出的 Promise（thenable 对象）
+ * @param {*} lanes 当前渲染的优先级车道
+ */
 export function attachPingListener(
   root: FiberRoot,
   wakeable: Wakeable,
@@ -5249,6 +5276,7 @@ export function attachPingListener(
   //
   // We only need to do this in concurrent mode. Legacy Suspense always
   // commits fallbacks synchronously, so there are no pings.
+  // 缓存机制：避免为同一个 Promise 的相同 lanes 重复添加监听器
   let pingCache = root.pingCache;
   let threadIDs;
   if (pingCache === null) {
@@ -5262,28 +5290,30 @@ export function attachPingListener(
       pingCache.set(wakeable, threadIDs);
     }
   }
+  // 检查是否已存在监听器
   if (!threadIDs.has(lanes)) {
+    // 表示本次渲染中至少有一个地方添加了 ping 监听器
     workInProgressRootDidAttachPingListener = true;
 
     // Memoize using the thread ID to prevent redundant listeners.
     threadIDs.add(lanes);
     const ping = pingSuspendedRoot.bind(null, root, wakeable, lanes);
-    if (enableUpdaterTracking) {
-      if (isDevToolsPresent) {
-        // If we have pending work still, restore the original updaters
-        restorePendingUpdaters(root, lanes);
-      }
-    }
+    // if (enableUpdaterTracking) {
+    //   if (isDevToolsPresent) {
+    //     // If we have pending work still, restore the original updaters
+    //     restorePendingUpdaters(root, lanes);
+    //   }
+    // }
+    // 无论 Promise 成功还是失败，都调用 ping，触发边界重试
     wakeable.then(ping, ping);
   }
 }
 
 /**
- * pingSuspendedRoot 是 React Suspense 机制中的核心恢复函数，
- * 负责在挂起的 Promise resolve 时通知 React 重新调度渲染
- * @param {*} root 
- * @param {*} wakeable 
- * @param {*} pingedLanes 
+ * 响应异步操作完成（Promise resolve/reject）并重新调度根节点渲染
+ * @param {*} root fiber 根节点
+ * @param {*} wakeable promise
+ * @param {*} pingedLanes 触发该 ping 的优先级车道
  */
 function pingSuspendedRoot(
   root: FiberRoot,
@@ -5294,16 +5324,20 @@ function pingSuspendedRoot(
   if (pingCache !== null) {
     // The wakeable resolved, so we no longer need to memoize, because it will
     // never be thrown again.
+    // 从缓存中删除已解决的 Promise
     pingCache.delete(wakeable);
   }
 
+  //  标记根节点被 ping
   markRootPinged(root, pingedLanes);
 
-  if (enableProfilerTimer && enableComponentPerformanceTrack) {
-    startPingTimerByLanes(pingedLanes);
-  }
+  // if (enableProfilerTimer && enableComponentPerformanceTrack) {
+  //   startPingTimerByLanes(pingedLanes);
+  // }
 
   warnIfSuspenseResolutionNotWrappedWithActDEV(root);
+
+  // 与当前进行中的渲染交互
 
   if (
     workInProgressRoot === root &&
@@ -5321,11 +5355,15 @@ function pingSuspendedRoot(
     // If we're suspended with delay, or if it's a retry, we'll always suspend
     // so we can always restart.
     if (
+      // 有延迟的挂起，如数据加载超时后显示 fallback
       workInProgressRootExitStatus === RootSuspendedWithDelay ||
       (workInProgressRootExitStatus === RootSuspended &&
+        // 当前渲染的 lanes 仅包含重试车道
         includesOnlyRetries(workInProgressRootRenderLanes) &&
+        // 且距离上一次 fallback 渲染的时间小于 FALLBACK_THROTTLE_MS（节流时间
         now() - globalMostRecentFallbackTime < FALLBACK_THROTTLE_MS)
     ) {
+      // 希望立即重新开始渲染
       // Force a restart from the root by unwinding the stack. Unless this is
       // being called from the render phase, because that would cause a crash.
       if ((executionContext & RenderContext) === NoContext) {
@@ -5338,12 +5376,14 @@ function pingSuspendedRoot(
         //
         // In the meantime, record the pinged lanes so markRootSuspended won't
         // mark them as suspended, allowing a retry.
+        // 如果正在渲染阶段，无法直接 unwind，则记录 pinged 
         workInProgressRootPingedLanes = mergeLanes(
           workInProgressRootPingedLanes,
           pingedLanes,
         );
       }
     } else {
+      // 不满足上述条件（如普通挂起且未超时，或者超时后已经过了节流时间），则只记录 pinged lanes，不立即重启
       // Even though we can't restart right now, we might get an
       // opportunity later. So we mark this render as having a ping.
       workInProgressRootPingedLanes = mergeLanes(
@@ -5359,11 +5399,13 @@ function pingSuspendedRoot(
     // Unlike the broader check above, we only need do this if the lanes match
     // exactly. If the lanes don't exactly match, that implies the promise
     // was created by an older render.
+    // 重置挂起重试车道
     if (workInProgressSuspendedRetryLanes === workInProgressRootRenderLanes) {
       workInProgressSuspendedRetryLanes = NoLanes;
     }
   }
 
+  // 确保根节点被调度
   ensureRootIsScheduled(root);
 }
 

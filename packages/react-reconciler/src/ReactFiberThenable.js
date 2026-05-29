@@ -48,6 +48,10 @@ function getThenablesFromState(state: ThenableState): Array<Thenable<any>> {
 
 // An error that is thrown (e.g. by `use`) to trigger Suspense. If we
 // detect this is caught by userspace, we'll log a warning in development.
+// 这不是一个真正的错误！   
+// 它是 React 内部的实现机制，用于：  
+//  1. 中断 use() 的渲染  
+//  2. 触发 Suspense 边界显示 fallback  
 export const SuspenseException: mixed = new Error(
   "Suspense Exception: This is not a real error! It's an implementation " +
     'detail of `use` to interrupt the current render. You must either ' +
@@ -75,6 +79,7 @@ export const SuspenseActionException: mixed = new Error(
 // TODO: It would be better to refactor throwException into multiple functions
 // so we can trigger a fallback directly without having to check the type. But
 // for now this will do.
+// 一个"空操作"的 thenable，用于标记 Suspensey Resource
 export const noopSuspenseyCommitThenable = {
   then() {
     if (__DEV__) {
